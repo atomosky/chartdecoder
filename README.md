@@ -1,6 +1,6 @@
 # Chart Decoder
 
-A medical terminology game for health informatics students. Players learn Greek and Latin word parts in a **Bootcamp**, then decode realistic, **de-identified clinical notes** from 26 specialties and disciplines, including inpatient, outpatient, and emergency settings.
+A medical terminology game for health informatics students. Players learn Greek and Latin word parts in a **Bootcamp**, then decode realistic, **"de-identified" synthetic clinical notes** from 26 specialties and disciplines, including inpatient, outpatient, and emergency settings.
 
 All cases are fictional teaching examples. They are not real patient data or clinical guidance.
 
