@@ -1,0 +1,1712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chart Decoder</title>
+<meta name="description" content="A medical terminology game for health informatics students. Decode realistic, de-identified clinical notes from across medicine.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='3' width='20' height='26' rx='3' fill='%230e7c74'/%3E%3Crect x='9' y='9' width='12' height='2' rx='1' fill='white'/%3E%3Crect x='9' y='14' width='6' height='2' rx='1' fill='white'/%3E%3Crect x='16' y='14' width='5' height='2' rx='1' fill='%23fde68a'/%3E%3Crect x='9' y='19' width='12' height='2' rx='1' fill='white'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --surface-2:#f7f9fc; --ink:#0f1b2d; --muted:#566173; --line:#dfe4ec;
+  --accent:#0e7c74; --accent-ink:#ffffff; --accent-soft:#e2f3f1;
+  --good:#15803d; --good-soft:#dcfce7; --bad:#b42318; --bad-soft:#fde7e5;
+  --star:#d99a0b; --term:#fff1b8; --term-line:#c99a06; --active:#0e7c74;
+  --paper:#fffef9; --paper-line:#ece6d6; --phi:#243044; --phi-text:#6b7280;
+  --shadow:0 1px 2px rgba(15,27,45,.05),0 6px 20px rgba(15,27,45,.06);
+  --radius:14px;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c1320; --surface:#141e30; --surface-2:#18243a; --ink:#e7ecf4; --muted:#9aa6b8; --line:#26354f;
+    --accent:#3cbcb0; --accent-ink:#051c1a; --accent-soft:#113531;
+    --good:#4ade80; --good-soft:#12301f; --bad:#f87171; --bad-soft:#3a1717;
+    --star:#f5c04a; --term:#3d3413; --term-line:#d4a72c; --active:#3cbcb0;
+    --paper:#101a2a; --paper-line:#223149; --phi:#c3cddd; --phi-text:#8d99ad;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c1320; --surface:#141e30; --surface-2:#18243a; --ink:#e7ecf4; --muted:#9aa6b8; --line:#26354f;
+  --accent:#3cbcb0; --accent-ink:#051c1a; --accent-soft:#113531;
+  --good:#4ade80; --good-soft:#12301f; --bad:#f87171; --bad-soft:#3a1717;
+  --star:#f5c04a; --term:#3d3413; --term-line:#d4a72c; --active:#3cbcb0;
+  --paper:#101a2a; --paper-line:#223149; --phi:#c3cddd; --phi-text:#8d99ad;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.2;margin:0}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px}
+
+/* top bar */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.topbar .wrap{display:flex;align-items:center;gap:12px;height:58px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);font-weight:750;letter-spacing:-.01em;font-size:18px}
+.brand svg{flex:none}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:14px;font-weight:600}
+.pill .s{color:var(--star)}
+
+/* buttons */
+.brand,.btn{white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:10px 16px;font-weight:650;border:1.5px solid transparent;text-decoration:none;transition:transform .08s ease,background .15s}
+.btn:active{transform:translateY(1px)}
+.primary{background:var(--accent);color:var(--accent-ink)}
+.primary:hover{filter:brightness(1.06)}
+.ghost{background:transparent;border-color:var(--line);color:var(--ink)}
+.ghost:hover{background:var(--surface-2)}
+.link{background:none;border:0;padding:0;color:var(--accent);font-weight:600}
+.small{padding:6px 11px;font-size:14px}
+.btnrow{display:flex;flex-wrap:wrap;gap:10px}
+
+.eyebrow{font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.lede{color:var(--muted);font-size:17px;max-width:62ch;margin:10px 0 0}
+.crumbs{padding:18px 0 6px}
+main{padding-bottom:48px}
+
+/* home */
+.hero{display:grid;grid-template-columns:1.5fr 1fr;gap:24px;align-items:center;padding:36px 0 18px}
+.hero h1{font-size:clamp(30px,5vw,46px);letter-spacing:-.02em}
+.hero-actions{margin-top:20px}
+.statcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(3,1fr);text-align:center;padding:18px 8px}
+.statcard b{display:block;font-size:26px;letter-spacing:-.02em}
+.statcard span{font-size:13px;color:var(--muted)}
+.statcard>div+div{border-left:1px solid var(--line)}
+.sec{margin-top:34px}
+.sec-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.step{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:15px;flex:none}
+.sec-head h2{font-size:24px;letter-spacing:-.01em}
+.sec p.sub{color:var(--muted);margin:4px 0 16px}
+.boot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.boot-card{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);text-decoration:none;color:var(--ink);display:block}
+.boot-card:hover{border-color:var(--accent)}
+.boot-card h3{font-size:17px}
+.boot-card p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.boot-card .meter{height:6px;border-radius:6px;background:var(--surface-2);border:1px solid var(--line);margin-top:12px;overflow:hidden}
+.boot-card .meter i{display:block;height:100%;background:var(--accent)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-size:14px;font-weight:600}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.search{margin-left:auto;min-width:220px;flex:1;max-width:320px;padding:8px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:15px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.card{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:6px;min-height:150px;transition:border-color .15s,transform .15s}
+.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.card-top{display:flex;justify-content:space-between;align-items:center}
+.card h3{font-size:17px}
+.card p{margin:0;color:var(--muted);font-size:14.5px}
+.card small{margin-top:auto;color:var(--muted);font-size:12.5px}
+.tag{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:6px}
+.tag.Inpatient{background:#e0e7ff;color:#3730a3}
+.tag.Outpatient{background:#dcfce7;color:#166534}
+.tag.Emergency{background:#fee2e2;color:#991b1b}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tag.Inpatient{background:#232a55;color:#c7d2fe}:root:not([data-theme="light"]) .tag.Outpatient{background:#12301f;color:#86efac}:root:not([data-theme="light"]) .tag.Emergency{background:#3a1717;color:#fca5a5}}
+.stars{color:var(--star);letter-spacing:1px;font-size:15px;white-space:nowrap}
+.stars .off{color:var(--line)}
+.draft{color:var(--muted);font-style:italic}
+.empty{color:var(--muted);padding:20px 0}
+
+/* case layout */
+.case-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px}
+.case-head h1{font-size:clamp(24px,3.4vw,32px);letter-spacing:-.015em}
+.case-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start}
+.ehr{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.ehr-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)}
+.ehr-bar .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.ehr-bar b{color:var(--ink);font-weight:650}
+.ehr-bar label{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ehr-bar select{font:inherit;font-size:13px;padding:4px 6px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.note-box{position:relative;overflow:auto;max-height:calc(100vh - 190px);background:var(--paper);background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 23px,var(--paper-line) 23px,var(--paper-line) 24px)}
+.note{margin:0;padding:12px 18px 20px;font-family:var(--mono);font-size:14px;line-height:24px;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
+.term{background:var(--term);border-bottom:2px dotted var(--term-line);border-radius:3px;padding:0 2px;transition:background .2s,box-shadow .2s}
+.term.active{background:var(--accent);color:var(--accent-ink);border-bottom-color:transparent;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent);animation:pulse 1.6s ease-in-out infinite}
+.term.ok{background:var(--good-soft);border-bottom:2px solid var(--good);cursor:help}
+.term.miss{background:var(--bad-soft);border-bottom:2px solid var(--bad);cursor:help}
+@keyframes pulse{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 12%,transparent)}}
+@media (prefers-reduced-motion: reduce){.term.active{animation:none}.card:hover{transform:none}}
+.phi{font:inherit;border:0;background:none;padding:0;margin:0;cursor:help;color:var(--phi-text);line-height:inherit}
+.phi-blank{letter-spacing:1px}
+.phi-mimic3{color:var(--phi-text)}
+.phi-bar{background:var(--phi);color:transparent;border-radius:2px;padding:0 2px;user-select:none}
+.phi.active{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.expand{color:var(--good);font-style:italic;font-family:var(--sans);font-size:13px}
+
+/* quiz panel */
+.panel{position:sticky;top:74px;display:flex;flex-direction:column;gap:14px}
+.qcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
+.qmeta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);font-weight:600}
+.progress{height:6px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:8px 0 14px}
+.progress i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.prompt{font-size:18px;font-weight:650;margin:0 0 14px;letter-spacing:-.005em}
+.prompt mark{background:var(--term);color:var(--ink);padding:1px 6px;border-radius:5px;font-family:var(--mono);font-size:.95em;border-bottom:2px dotted var(--term-line)}
+.opts{display:grid;gap:8px}
+.opt{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;padding:11px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);transition:border-color .12s,background .12s}
+.opt:hover:not(:disabled){border-color:var(--accent);background:var(--accent-soft)}
+.opt kbd{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:1px}
+.opt:disabled{cursor:default}
+.opt.right{border-color:var(--good);background:var(--good-soft)}
+.opt.wrong{border-color:var(--bad);background:var(--bad-soft)}
+.opt.out{opacity:.38;text-decoration:line-through}
+.qfoot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap}
+.qfoot .keys{font-size:12px;color:var(--muted)}
+.fb:empty{display:none}
+.fb{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.verdict{font-weight:800;font-size:15px}
+.verdict.good{color:var(--good)} .verdict.bad{color:var(--bad)}
+.fb p{margin:6px 0}
+.fb .explain{color:var(--muted);font-size:15px}
+.fb .btn{margin-top:8px}
+.decoded{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.decoded h3{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px}
+.decoded ul{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:14px}
+.decoded li b{font-family:var(--mono);font-size:13px}
+.decoded li.ok b{color:var(--good)} .decoded li.miss b{color:var(--bad)}
+.decoded:has(ul:empty){display:none}
+
+/* bootcamp */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:22px 0 14px;border-bottom:1px solid var(--line)}
+.tab{padding:9px 14px;border-radius:10px 10px 0 0;text-decoration:none;color:var(--muted);font-weight:650;border:1px solid transparent;border-bottom:0;margin-bottom:-1px}
+.tab.on{color:var(--ink);background:var(--surface);border-color:var(--line)}
+.tab .mini{font-size:12px;color:var(--accent)}
+.boot-intro{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px}
+.boot-intro p{margin:0;color:var(--muted);max-width:60ch}
+.hint-line{font-size:13px;color:var(--muted);margin:14px 0 10px}
+.flash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.flash{min-height:104px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:left;display:flex;flex-direction:column;justify-content:center;box-shadow:var(--shadow)}
+.flash .front b{font-family:var(--mono);font-size:19px}
+.flash .back{display:none}
+.flash.flipped{background:var(--accent-soft);border-color:var(--accent)}
+.flash.flipped .front{display:none}
+.flash.flipped .back{display:flex;flex-direction:column;gap:4px}
+.flash .back b{font-size:15.5px}
+.flash .back small{color:var(--muted);font-size:13px}
+.solo{max-width:680px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.solo h1{font-size:28px}
+
+/* summary */
+.summary{max-width:860px;margin:0 auto;padding-top:18px}
+.result{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px;text-align:center}
+.result .big-stars{font-size:42px;color:var(--star);letter-spacing:4px}
+.result .big-stars .off{color:var(--line)}
+.result h1{font-size:30px;margin-top:6px}
+.result p{color:var(--muted);margin:8px 0 18px}
+.result .btnrow{justify-content:center}
+.summary h2{font-size:20px;margin:30px 0 10px}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:14.5px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-2);font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+td.t{font-family:var(--mono);font-weight:700;white-space:nowrap}
+td .x{color:var(--muted)}
+tr.miss td.t{color:var(--bad)} tr.ok td.t{color:var(--good)}
+.table-wrap{overflow-x:auto}
+
+/* review */
+.review h1{font-size:30px;margin-top:20px}
+.rv-help{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;margin:16px 0}
+.rv-help ol{margin:6px 0 0;padding-left:20px}
+.rv-toc{columns:2 260px;font-size:14px;padding-left:20px}
+.rv-case{margin:30px 0;padding-top:10px;border-top:2px solid var(--line)}
+.rv-case h2{font-size:21px}
+.rv-meta{color:var(--muted);font-size:14px;margin:4px 0 10px}
+.rv-case .note-box{max-height:none;border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
+.rv-lines{margin-top:10px;border:1px dashed var(--line);border-radius:10px;padding:10px 14px;color:var(--muted);font-size:14px;min-height:70px}
+
+/* footer, toast, dialog */
+footer{border-top:1px solid var(--line);color:var(--muted);font-size:13.5px}
+footer .wrap{padding:20px 16px;display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(30px);opacity:0;background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:12px;max-width:min(520px,calc(100vw - 32px));font-size:14.5px;box-shadow:var(--shadow);transition:all .25s;z-index:50;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);max-width:640px;width:calc(100vw - 32px);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(10,15,25,.5)}
+.dlg{padding:22px 24px}
+.dlg h2{font-size:22px;margin-bottom:8px}
+.dlg h3{font-size:16px;margin:18px 0 4px}
+.dlg p,.dlg li{color:var(--muted);font-size:15px}
+.dlg ul{padding-left:20px;margin:6px 0}
+.dlg code{font-family:var(--mono);background:var(--surface-2);padding:1px 5px;border-radius:5px;color:var(--ink)}
+.dlg-foot{display:flex;justify-content:flex-end;padding:12px 24px 20px}
+
+@media (max-width: 900px){
+  .hero{grid-template-columns:1fr;padding-top:24px}
+  .case-grid{grid-template-columns:1fr}
+  .panel{position:static}
+  .note-box{max-height:46vh}
+  .search{margin-left:0;max-width:none}
+}
+@media (max-width: 520px){
+  .note{font-size:12.5px;padding:10px 12px 16px}
+  .ehr-bar label{margin-left:0}
+  .statcard b{font-size:22px}
+  .prompt{font-size:17px}
+}
+@media print{
+  .topbar,footer,.no-print{display:none!important}
+  body{background:#fff;color:#000}
+  .rv-case{break-inside:avoid-page}
+  tr{break-inside:avoid}
+  .note-box{background:#fff!important}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#" aria-label="Chart Decoder home">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="3" width="20" height="26" rx="3" fill="var(--accent)"/><rect x="9" y="9" width="12" height="2" rx="1" fill="#fff"/><rect x="9" y="14" width="6" height="2" rx="1" fill="#fff"/><rect x="16" y="14" width="5" height="2" rx="1" fill="#fde68a"/><rect x="9" y="19" width="12" height="2" rx="1" fill="#fff"/><circle cx="23" cy="23" r="5" fill="none" stroke="var(--ink)" stroke-width="2.2"/><path d="M26.5 26.5 L30 30" stroke="var(--ink)" stroke-width="2.4" stroke-linecap="round"/></svg>
+      Chart Decoder
+    </a>
+    <div class="top-right">
+      <span class="pill" id="starPill" title="Total stars earned"><span class="s">★</span> <span id="starCount">0</span></span>
+      <button class="btn ghost small" data-act="how">How to play</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="app"></main>
+
+<footer>
+  <div class="wrap">
+    <span>All cases are fictional teaching examples, not real patient data. For educational use only. Not clinical guidance.</span>
+    <span><a href="#review">Clinician review mode</a> · <button class="link" data-act="reset">Reset progress</button></span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="howDlg" aria-labelledby="howTitle">
+  <div class="dlg">
+    <h2 id="howTitle">How to play Chart Decoder</h2>
+    <ol>
+      <li><b>Start with Bootcamp.</b> Learn the Greek and Latin building blocks (prefixes, roots, suffixes) plus the Rx shorthand used in orders.</li>
+      <li><b>Pick a note.</b> Each specialty has an inpatient, outpatient, or emergency note. Highlighted terms are the ones you'll decode.</li>
+      <li><b>Decode, term by term.</b> Choose the meaning. Right on the first try = 10 pts. After using a hint = 5 pts. Three in a row = streak bonus.</li>
+      <li><b>Earn stars.</b> 90%+ = 3 stars · 70%+ = 2 · 50%+ = 1. At the end, you'll see the whole note translated into plain language.</li>
+    </ol>
+    <h3>Why are there blanks in the notes?</h3>
+    <p>Research and teaching datasets are <b>de-identified</b> before you ever see them. Under the HIPAA Safe Harbor method, 18 kinds of identifiers are removed, including names, dates (except year), MRNs, phone numbers, addresses, and ages over 89. Every dataset marks removed text differently:</p>
+    <ul>
+      <li><code>___</code> blanks (the style used in MIMIC-IV)</li>
+      <li><code>[**Name**]</code> tags (the style used in MIMIC-III)</li>
+      <li><code>█████</code> black bars, or fake "surrogate" names in some datasets</li>
+    </ul>
+    <p>Use the <b>Redaction style</b> menu above each note to practice reading all three. Tap any redaction to see what was removed and why.</p>
+    <h3>Context is everything</h3>
+    <p>The same letters can mean different things in different specialties. <code>RA</code> is room air in the ED and rheumatoid arthritis in rheumatology. <code>AG</code> is anion gap in the ICU and anticipatory guidance in pediatrics. Watch for these repeats.</p>
+    <p><b>Keyboard:</b> press <code>1</code>–<code>4</code> to answer, <code>H</code> for a hint, and <code>Enter</code> to continue.</p>
+  </div>
+  <div class="dlg-foot"><button class="btn primary" data-act="closehow">Let's decode</button></div>
+</dialog>
+
+<!-- ============ CONTENT: edit cases & bootcamp terms below ============ -->
+<script>
+/* =====================================================================
+   CHART DECODER — content file
+   ---------------------------------------------------------------------
+   Edit this file to add, fix, or remove content. No coding needed
+   beyond keeping the punctuation intact.
+
+   NOTE MARKUP
+     {term}      -> a quizzable term (must match a question's term exactly)
+     [[TYPE]]    -> a de-identified (redacted) field. Types:
+                    NAME, DATE, MRN, PROVIDER, HOSPITAL, LOCATION,
+                    PHONE, ACCOUNT, AGE 90+
+
+   QUESTION FORMAT (one line per question)
+     [ "term", "correct answer", ["wrong 1","wrong 2","wrong 3"], "explanation" ]
+   Concept question (not tied to a term):
+     [ null, "correct answer", [wrongs], "explanation", "question prompt", "PHI TYPE to highlight" ]
+
+   REVIEW STATUS
+     reviewed: false  -> shows "Draft · pending clinician review"
+     reviewed: true   -> badge disappears. Add reviewedBy: "Name, MD" if you like.
+   ===================================================================== */
+
+window.CHART_DECODER = {
+
+/* ------------------------------ BOOTCAMP ------------------------------ */
+bootcamp: [
+  { key: "prefix", name: "Prefixes", kind: "part",
+    blurb: "Prefixes sit at the front of a word and tell you where, how much, or how fast.",
+    items: [
+      ["a-/an-", "without, absence of", "apnea", "absence of breathing"],
+      ["brady-", "slow", "bradycardia", "slow heart rate"],
+      ["tachy-", "fast", "tachycardia", "fast heart rate"],
+      ["dys-", "difficult, painful, or abnormal", "dysphagia", "difficulty swallowing"],
+      ["hyper-", "above normal, excessive", "hyperglycemia", "high blood sugar"],
+      ["hypo-", "below normal, deficient", "hypokalemia", "low blood potassium"],
+      ["poly-", "many, much", "polyuria", "excessive urination"],
+      ["olig/o-", "few, scanty", "oliguria", "very low urine output"],
+      ["hemi-", "half", "hemiplegia", "paralysis of one side of the body"],
+      ["peri-", "around", "pericarditis", "inflammation of the sac around the heart"],
+      ["intra-", "within", "intravenous", "within a vein"],
+      ["inter-", "between", "intercostal", "between the ribs"],
+      ["sub-", "below, under", "subcutaneous", "under the skin"],
+      ["supra-", "above (in position)", "suprapubic", "above the pubic bone"],
+      ["epi-", "upon, on top of", "epidural", "on top of the dura (spinal covering)"],
+      ["pre-", "before", "preoperative", "before surgery"],
+      ["post-", "after", "postprandial", "after a meal"],
+      ["neo-", "new", "neonate", "newborn"],
+      ["macro-", "large", "macrocytic", "having abnormally large cells"],
+      ["micro-", "small", "microcephaly", "abnormally small head"],
+      ["pan-", "all", "pancytopenia", "deficiency of all blood cell types"],
+      ["anti-", "against", "antibiotic", "a drug that works against bacteria"],
+      ["retro-", "behind, backward", "retroperitoneal", "behind the abdominal lining"],
+      ["trans-", "across, through", "transdermal", "through the skin"]
+    ]},
+  { key: "root", name: "Roots", kind: "part",
+    blurb: "Roots name the body part, color, or substance. Most come from Greek or Latin.",
+    items: [
+      ["cardi/o", "heart", "cardiomegaly", "enlargement of the heart"],
+      ["pulmon/o", "lung", "pulmonology", "study of the lungs"],
+      ["pneum/o", "air, breath", "pneumothorax", "air in the chest cavity (collapsed lung)"],
+      ["hepat/o", "liver", "hepatomegaly", "enlargement of the liver"],
+      ["nephr/o, ren/o", "kidney", "nephrolithiasis", "condition of kidney stones"],
+      ["gastr/o", "stomach", "gastritis", "inflammation of the stomach"],
+      ["enter/o", "small intestine", "enteritis", "inflammation of the small intestine"],
+      ["col/o", "colon (large intestine)", "colectomy", "removal of the colon"],
+      ["oste/o", "bone", "osteoporosis", "porous, weakened bones"],
+      ["arthr/o", "joint", "arthralgia", "joint pain"],
+      ["my/o", "muscle", "myalgia", "muscle pain"],
+      ["neur/o", "nerve", "neuropathy", "nerve disease"],
+      ["encephal/o", "brain", "encephalitis", "inflammation of the brain"],
+      ["derm/o, dermat/o", "skin", "dermatitis", "inflammation of the skin"],
+      ["hem/o, hemat/o", "blood", "hematuria", "blood in the urine"],
+      ["angi/o", "vessel", "angioplasty", "surgical repair of a vessel"],
+      ["phleb/o", "vein", "phlebotomy", "incision into a vein (drawing blood)"],
+      ["cyst/o", "bladder, sac", "cystoscopy", "visual exam of the bladder"],
+      ["hyster/o", "uterus", "hysterectomy", "removal of the uterus"],
+      ["mast/o, mamm/o", "breast", "mastectomy", "removal of the breast"],
+      ["ophthalm/o, ocul/o", "eye", "ophthalmology", "study of the eye"],
+      ["ot/o", "ear", "otitis", "inflammation of the ear"],
+      ["rhin/o", "nose", "rhinorrhea", "runny nose (nasal discharge)"],
+      ["erythr/o", "red", "erythrocyte", "red blood cell"],
+      ["leuk/o", "white", "leukocytosis", "increased white blood cells"],
+      ["cyan/o", "blue", "cyanosis", "bluish discoloration from low oxygen"],
+      ["glyc/o", "sugar, glucose", "hypoglycemia", "low blood sugar"],
+      ["lip/o", "fat", "lipoma", "benign fatty tumor"],
+      ["thromb/o", "clot", "thrombectomy", "removal of a clot"],
+      ["chol/e", "bile, gall", "cholecystectomy", "removal of the gallbladder"],
+      ["psych/o", "mind", "psychiatry", "medical treatment of the mind"],
+      ["cephal/o", "head", "cephalgia", "headache"],
+      ["thorac/o", "chest", "thoracotomy", "incision into the chest"],
+      ["kal/i", "potassium", "hyperkalemia", "high blood potassium"],
+      ["natr/i", "sodium", "hyponatremia", "low blood sodium"]
+    ]},
+  { key: "suffix", name: "Suffixes", kind: "part",
+    blurb: "Suffixes end the word and usually name a condition, procedure, or test.",
+    items: [
+      ["-itis", "inflammation", "appendicitis", "inflammation of the appendix"],
+      ["-ectomy", "surgical removal", "appendectomy", "removal of the appendix"],
+      ["-otomy", "cutting into, incision", "tracheotomy", "incision into the trachea"],
+      ["-ostomy", "surgical creation of an opening", "colostomy", "opening from the colon to the abdominal wall"],
+      ["-plasty", "surgical repair or reconstruction", "rhinoplasty", "surgical repair of the nose"],
+      ["-scopy", "visual examination with a scope", "colonoscopy", "visual exam of the colon"],
+      ["-algia", "pain", "neuralgia", "nerve pain"],
+      ["-emia", "blood condition", "anemia", "lack of red blood cells or hemoglobin"],
+      ["-uria", "urine condition", "dysuria", "painful urination"],
+      ["-penia", "deficiency", "thrombocytopenia", "low platelet count"],
+      ["-megaly", "enlargement", "splenomegaly", "enlarged spleen"],
+      ["-oma", "tumor, mass", "melanoma", "tumor of pigment cells"],
+      ["-osis", "abnormal condition", "thrombosis", "condition of clot formation"],
+      ["-pathy", "disease", "cardiomyopathy", "disease of the heart muscle"],
+      ["-rrhea", "flow, discharge", "diarrhea", "loose, flowing stool"],
+      ["-rrhage", "bursting forth (heavy bleeding)", "hemorrhage", "heavy bleeding"],
+      ["-stenosis", "narrowing", "aortic stenosis", "narrowing of the aortic valve"],
+      ["-plegia", "paralysis", "quadriplegia", "paralysis of all four limbs"],
+      ["-paresis", "weakness (partial paralysis)", "hemiparesis", "weakness of one side of the body"],
+      ["-pnea", "breathing", "tachypnea", "fast breathing"],
+      ["-phagia", "eating, swallowing", "dysphagia", "difficulty swallowing"],
+      ["-phasia", "speech", "aphasia", "loss of ability to use language"],
+      ["-gram", "a record or image", "electrocardiogram", "record of the heart's electrical activity"],
+      ["-lysis", "breakdown, destruction", "hemolysis", "breakdown of red blood cells"],
+      ["-lith", "stone", "cholelith", "gallstone"],
+      ["-centesis", "puncture to remove fluid", "thoracentesis", "needle drainage of fluid from the chest"],
+      ["-cyte", "cell", "leukocyte", "white blood cell"],
+      ["-logy", "study of", "cardiology", "study of the heart"],
+      ["-genic", "producing, originating from", "cardiogenic", "originating from the heart"]
+    ]},
+  { key: "rx", name: "Rx & Latin", kind: "abbr",
+    blurb: "Medication orders still run on Latin. Some are now on official 'Do Not Use' lists, but you'll still see them in older records.",
+    items: [
+      ["PO", "by mouth", "per os", ""],
+      ["NPO", "nothing by mouth", "nil per os", ""],
+      ["PRN", "as needed", "pro re nata", ""],
+      ["BID", "twice a day", "bis in die", ""],
+      ["TID", "three times a day", "ter in die", ""],
+      ["QID", "four times a day", "quater in die", ""],
+      ["q", "every", "quaque", "Example: q4h = every 4 hours."],
+      ["qHS", "every night at bedtime", "quaque hora somni", "ISMP flags this as error-prone (it can be misread as 'every hour')."],
+      ["QD", "every day", "quaque die", "On The Joint Commission's 'Do Not Use' list. Write 'daily' instead."],
+      ["QOD", "every other day", "quaque altera die", "On The Joint Commission's 'Do Not Use' list. Write 'every other day' instead."],
+      ["AC", "before meals", "ante cibum", ""],
+      ["PC", "after meals", "post cibum", ""],
+      ["STAT", "immediately", "statim", ""],
+      ["gtt", "drops / continuous drip", "guttae", ""],
+      ["c̄", "with", "cum", ""],
+      ["s̄", "without", "sine", ""],
+      ["SL", "under the tongue", "sub lingua", ""],
+      ["PR", "by rectum", "per rectum", "In an ECG report, PR is an interval instead. Context matters."],
+      ["ad lib", "as desired, freely", "ad libitum", "Example: 'diet ad lib'."],
+      ["OD / OS / OU", "right eye / left eye / both eyes", "oculus dexter / sinister / uterque", "ISMP lists these as error-prone. Spell them out."],
+      ["AD / AS / AU", "right ear / left ear / both ears", "auris dextra / sinistra / utraque", "ISMP lists these as error-prone. Spell them out."]
+    ]},
+  { key: "short", name: "Chart Shorthand", kind: "abbr",
+    blurb: "The everyday shorthand clinicians type fast. Once you know these, notes start to read like sentences.",
+    items: [
+      ["Hx", "history", "", "The 'x' family: Hx, Dx, Tx, Sx, Fx, Bx, Cx."],
+      ["Dx", "diagnosis", "", ""],
+      ["Tx", "treatment", "", "Some specialties also use Tx for transplant."],
+      ["Sx", "symptoms", "", ""],
+      ["Fx", "fracture", "", ""],
+      ["Bx", "biopsy", "", ""],
+      ["Cx", "culture", "", ""],
+      ["Abx", "antibiotics", "", ""],
+      ["c/o", "complains of", "", ""],
+      ["s/p", "status post (after a procedure or event)", "", ""],
+      ["h/o", "history of", "", ""],
+      ["w/ , w/o", "with, without", "", ""],
+      ["y/o", "years old", "", ""],
+      ["f/u", "follow-up", "", ""],
+      ["r/o", "rule out", "", ""],
+      ["2/2", "secondary to (caused by)", "", ""],
+      ["d/t", "due to", "", ""],
+      ["Δ", "change", "", "Example: 'Δ MS' = change in mental status."],
+      ["↑ / ↓", "increased / decreased", "", ""],
+      ["NAD", "no acute distress", "", ""],
+      ["WNL", "within normal limits", "", ""],
+      ["pt", "patient", "", ""],
+      ["(+) / (−)", "positive / negative", "", ""]
+    ]}
+],
+
+/* -------------------------------- CASES -------------------------------- */
+cases: [
+
+{ id: "em-chest-pain", specialty: "Emergency Medicine", setting: "Emergency",
+  type: "ED Provider Note", title: "Chest pain at 2 a.m.", reviewed: false,
+  note: `ED PROVIDER NOTE
+Pt: [[NAME]]    MRN: [[MRN]]    Arrival: [[DATE]] 02:14
+Attending: [[PROVIDER]], MD
+
+CC: {CP} x 2 hrs
+
+HPI: Pt is a 58 y/o M w/ PMH of HTN, HLD, and tobacco use who
+presents w/ substernal CP radiating to L arm, assoc w/ {diaphoresis}
+and {SOB}. Denies syncope. Took ASA 325 mg {PTA}.
+
+ROS: (+) as per HPI, otherwise neg.
+
+PE: BP 162/94, HR 104, RR 20, SpO2 95% on {RA}
+Gen: anxious, diaphoretic
+Lungs: {CTAB}
+CV: tachycardic, regular rhythm, no murmur
+
+ECG: 2 mm STE in II, III, aVF
+
+A/P: Inferior {STEMI}
+- Cath lab activated; cardiology ([[PROVIDER]]) at bedside
+- Heparin gtt, serial troponins`,
+  qs: [
+    ["CP", "Chest pain", ["Cerebral palsy", "Cardiac pressure", "Chronic pain"], "In an ED chief complaint, CP = chest pain. Watch out: in pediatric or neurology notes, CP often means cerebral palsy. Context decides."],
+    ["diaphoresis", "Heavy sweating", ["Difficulty swallowing", "Rapid breathing", "Fainting"], "Diaphoresis = heavy sweating, a classic sign that often comes with a heart attack."],
+    ["SOB", "Shortness of breath", ["Swelling of the body", "Sinus obstruction", "Side of bed"], "SOB = shortness of breath. The formal term is dyspnea: dys- (difficult) + -pnea (breathing)."],
+    ["PTA", "Prior to arrival", ["Post-traumatic amnesia", "Percutaneous transluminal angioplasty", "Physical therapy assessment"], "PTA = prior to arrival (before reaching the hospital). PTA can also mean post-traumatic amnesia or angioplasty elsewhere."],
+    ["RA", "Room air (no supplemental oxygen)", ["Rheumatoid arthritis", "Right atrium", "Respiratory alert"], "Next to an oxygen saturation, RA = room air. In a rheumatology note, RA = rheumatoid arthritis. In an echo report, it means right atrium."],
+    ["CTAB", "Clear to auscultation bilaterally", ["Chest tube, anterior, bilateral", "CT of the abdomen", "Coarse throughout all bases"], "CTAB = clear to auscultation bilaterally: the lungs sound normal on both sides through a stethoscope."],
+    ["STEMI", "ST-elevation myocardial infarction", ["Stable exertional myocardial ischemia", "Sudden transient embolic myocardial injury", "ST-elevation mitral insufficiency"], "STEMI = a heart attack with ST elevation on the ECG. My/o (muscle) + cardi/o (heart) + infarction (tissue death)."],
+    [null, "HIPAA Safe Harbor removes all date elements except year, but ages under 90 may stay", ["Ages are never considered identifiers", "The date was wrong in the original record", "Only the treating hospital decides what to remove"], "The HIPAA Safe Harbor method removes 18 identifier types, including names, MRNs, and all parts of dates except the year. Ages 89 and under can stay. Ages 90+ are grouped as '90 or older.'", "The patient's age (58) was kept, but the arrival date was blanked. Why?", "DATE"]
+  ]},
+
+{ id: "im-chf", specialty: "Internal Medicine (Hospitalist)", setting: "Inpatient",
+  type: "Admission H&P", title: "Can't lie flat", reviewed: false,
+  note: `ADMISSION H&P — HOSPITAL MEDICINE
+[[HOSPITAL]]    Admit date: [[DATE]]
+
+CC: Worsening {DOE} and leg swelling x 1 wk
+
+HPI: Pt is a 72 y/o F w/ {HFrEF} (EF 30%), CAD {s/p} CABG, DM2,
+and CKD 3 who presents w/ 3-pillow {orthopnea}, {PND}, and 4 kg
+wt gain. Reports eating high-salt foods at a family event.
+
+PE: BP 148/88, HR 92, SpO2 90% RA → 95% on 2L NC
+Neck: {JVD} to angle of jaw
+Lungs: bibasilar crackles
+Ext: 3+ pitting edema BLE to knees
+
+Labs: BNP 1,840. Cr 1.6 (baseline 1.3)
+CXR: cardiomegaly, pulmonary vascular congestion, small bilat effusions
+
+A/P: Acute on chronic HFrEF exacerbation (volume overload)
+- Furosemide 40 mg IV {BID}; strict I/Os, daily weights
+- 2 g Na diet, 1.5 L fluid restriction
+- Trend BMP; monitor for AKI w/ diuresis`,
+  qs: [
+    ["DOE", "Dyspnea on exertion", ["Date of exam", "Degenerative osteoarthritis of the elbow", "Drowsiness on exertion"], "DOE = shortness of breath with activity. Dys- (difficult) + -pnea (breathing)."],
+    ["HFrEF", "Heart failure with reduced ejection fraction", ["Hypertensive failure of the right heart", "Heart failure with recovered ejection fraction", "High-flow renal failure"], "HFrEF ('HEF-ref') = heart failure with reduced ejection fraction, typically EF ≤ 40%. Its partner is HFpEF (preserved EF)."],
+    ["s/p", "Status post (has previously had)", ["Suspected pneumonia", "Systolic pressure", "Stable, pending"], "s/p = status post: the patient has already had this procedure or event. Here, she has had a CABG (coronary artery bypass graft)."],
+    ["orthopnea", "Shortness of breath when lying flat", ["Straightening of the spine", "Normal breathing rate", "Breathing only through the mouth"], "Orth/o (straight, upright) + -pnea (breathing): breathing is easier sitting up. '3-pillow orthopnea' means she props herself on 3 pillows to breathe at night."],
+    ["PND", "Paroxysmal nocturnal dyspnea", ["Post-nasal drip", "Peripheral neuropathy of the digits", "Pulmonary nodule, diffuse"], "PND = waking suddenly at night gasping for air, a classic heart failure symptom. In an ENT note, PND can mean post-nasal drip."],
+    ["JVD", "Jugular venous distension", ["Joint valve dysfunction", "Juvenile vascular disease", "Jaundice, visible, diffuse"], "JVD = swollen neck veins, a sign that fluid is backing up into the venous system."],
+    ["BID", "Twice a day", ["Every other day", "Before bedtime", "Twice a week"], "BID comes from the Latin bis in die, 'twice a day.' Related terms: TID (three times) and QID (four times)."]
+  ]},
+
+{ id: "fm-annual", specialty: "Family Medicine / Primary Care", setting: "Outpatient",
+  type: "Annual Visit (SOAP)", title: "The annual physical", reviewed: false,
+  note: `PRIMARY CARE — ANNUAL PREVENTIVE VISIT
+Visit date: [[DATE]]    PCP: [[PROVIDER]], DO
+Address: [[LOCATION]]    Phone: [[PHONE]]
+
+S: Pt is a 49 y/o F here for annual exam. Hx of {HTN} and T2DM.
+Reports good med adherence. Walks 3x/wk. Denies {polydipsia} or
+polyuria. {FHx}: mother w/ breast CA at 52.
+Meds: lisinopril 10 mg {PO} {QD}; metformin 1000 mg PO BID
+
+O: BP 138/86, BMI 31.2. Monofilament sensation intact bilat.
+Labs: {A1c} 7.4%, LDL 128
+
+A: 1. HTN, not at goal  2. T2DM, above goal  3. Obesity
+
+P: Increase lisinopril to 20 mg PO daily. Start atorvastatin.
+Refer for screening mammogram and diabetic eye exam. {RTC} 3 mo.
+AVS printed and reviewed w/ pt.`,
+  qs: [
+    ["HTN", "Hypertension (high blood pressure)", ["Hypotension", "Hyperthyroidism", "Hospital transfer note"], "Hyper- (above normal) + tension (pressure). Don't confuse it with hypo- (below normal)."],
+    ["polydipsia", "Excessive thirst", ["Excessive urination", "Excessive hunger", "Difficulty swallowing"], "Poly- (much) + -dipsia (thirst). Polyuria = excessive urination. Polyphagia = excessive hunger. Together they're classic signs of high blood sugar."],
+    ["FHx", "Family history", ["Follow-up history", "Fracture history", "Fetal heart exam"], "The 'x' shorthand shows up everywhere: Hx (history), Dx (diagnosis), Tx (treatment), Rx (prescription), Sx (symptoms)."],
+    ["PO", "By mouth", ["Post-operative", "Per order", "Phone order"], "PO = per os, Latin for 'by mouth.'"],
+    ["QD", "Every day", ["Four times a day", "Every other day", "Every hour"], "QD = quaque die, 'every day.' It's on The Joint Commission's 'Do Not Use' list because it's easily misread as QID (four times a day), but you'll still find it in records. Best practice is to write 'daily.'"],
+    ["A1c", "Hemoglobin A1c (average blood sugar over ~3 months)", ["Albumin-to-creatinine ratio", "Allergy class 1C", "First-degree heart block"], "Hemoglobin A1c reflects average blood glucose over about 3 months. A result of 6.5% or higher meets the diagnostic threshold for diabetes."],
+    ["RTC", "Return to clinic", ["Refer to cardiology", "Routine throat culture", "Rule-out test completed"], "RTC = return to clinic (when the next visit should be). You'll also see f/u (follow-up)."]
+  ]},
+
+{ id: "cards-afib", specialty: "Cardiology", setting: "Outpatient",
+  type: "Clinic Follow-up", title: "An irregular rhythm", reviewed: false,
+  note: `CARDIOLOGY CLINIC — FOLLOW-UP
+Visit date: [[DATE]]    Referring: [[PROVIDER]]
+
+Pt is a 67 y/o M seen in f/u for {AFib} dx'd 3 mo ago. Reports
+occasional palpitations, no presyncope. Tolerating apixaban
+w/o bleeding. {CHA2DS2-VASc} score 3 (age, HTN, DM).
+
+Echo ([[DATE]]): {LVEF} 55%, mild {LAE}, no significant valve dz.
+ECG today: AFib, ventricular rate 78, no acute ST-T changes.
+
+Assessment: Persistent AFib, rate controlled on metoprolol.
+
+Plan:
+- Continue {DOAC} (apixaban 5 mg BID)
+- Discuss rhythm control: {DCCV} vs catheter ablation next visit
+- 48-hr Holter monitor to assess rate control`,
+  qs: [
+    ["AFib", "Atrial fibrillation", ["Acute febrile illness", "Aortic fibrosis", "Atrial flutter"], "AFib = the upper chambers (atria) quiver irregularly. Atrial flutter (AFL) is a related but different rhythm."],
+    ["CHA2DS2-VASc", "A stroke-risk score used in AFib", ["A heart failure staging system", "A cholesterol risk calculator", "A bleeding-risk score"], "CHA₂DS₂-VASc scores stroke risk in AFib (CHF, HTN, Age, DM, prior Stroke/TIA, Vascular disease, Sex category). Higher scores favor anticoagulation. Bleeding risk uses a different score (HAS-BLED)."],
+    ["LVEF", "Left ventricular ejection fraction", ["Left ventricular end-filling", "Lower extremity venous flow", "Left valve efficiency factor"], "LVEF = the percentage of blood the left ventricle pumps out with each beat. Roughly 55–70% is normal."],
+    ["LAE", "Left atrial enlargement", ["Left arm edema", "Lateral aortic embolus", "Lower airway exam"], "LAE = left atrial enlargement, which is common in AFib."],
+    ["DOAC", "Direct oral anticoagulant", ["Daily oral antiarrhythmic combination", "Dose of anticoagulant as charted", "Diuretic, oral, as needed"], "DOAC = a direct oral anticoagulant (e.g., apixaban, rivaroxaban). Older notes may call these NOACs."],
+    ["DCCV", "Direct current cardioversion", ["Deep cardiac catheter vein", "Dual-chamber cardiac ventricle", "Diastolic cardiac compliance value"], "DCCV = a timed electrical shock to reset the heart into normal rhythm."]
+  ]},
+
+{ id: "icu-copd", specialty: "Pulmonary & Critical Care", setting: "Inpatient",
+  type: "ICU Progress Note", title: "Off the ventilator?", reviewed: false,
+  note: `MICU PROGRESS NOTE — Hospital Day #3
+Pt is a 63 y/o M w/ severe COPD admitted for {AECOPD} c/b
+hypercapnic respiratory failure requiring intubation.
+
+24h events: Weaned {FiO2} 60% → 40%. Passed {SBT} this AM.
+
+Vent: AC/VC   TV 450   RR 16   {PEEP} 5   FiO2 40%
+{ABG}: 7.36 / 52 / 78
+Neuro: RASS 0 off sedation, follows commands
+CV: MAP > 65 off pressors
+
+A/P:
+# Hypercapnic resp failure {2/2} AECOPD — extubate to BiPAP today;
+  cont nebs, methylprednisolone 40 mg IV q12h, azithromycin
+# DVT {ppx}: heparin 5,000 units SQ q8h
+# Code status: Full
+Family (son, [[NAME]]) updated by phone at [[PHONE]].`,
+  qs: [
+    ["AECOPD", "Acute exacerbation of COPD", ["Acute emphysema with chronic obstructive pneumonia", "Airway emergency, COPD protocol", "Acute effusion due to COPD"], "AECOPD = a flare of chronic obstructive pulmonary disease. 'c/b' = complicated by."],
+    ["FiO2", "Fraction of inspired oxygen (% oxygen delivered)", ["Forced inspiratory oxygen volume", "Final oxygen saturation", "Flow of oxygen in liters"], "FiO₂ = the percentage of oxygen in the air being delivered. Room air is 21%."],
+    ["SBT", "Spontaneous breathing trial", ["Standard blood test", "Serial bronchoscopy test", "Short breath tolerance"], "SBT = a test of whether the patient can breathe with minimal ventilator support. It's a key step before removing the breathing tube."],
+    ["PEEP", "Positive end-expiratory pressure", ["Peak expiratory effort pressure", "Pulmonary embolism evaluation protocol", "Partial end-expiratory pause"], "PEEP = pressure the ventilator keeps in the lungs at the end of each breath to keep the air sacs open."],
+    ["ABG", "Arterial blood gas", ["Abnormal blood glucose", "Airway blockage grade", "Anion-balance gap"], "ABG values are written pH / PaCO₂ / PaO₂. Here the CO₂ of 52 is high, which is the 'hypercapnia.'"],
+    ["2/2", "Secondary to (caused by)", ["Two out of two", "Twice daily", "Second of two diagnoses"], "2/2 = secondary to. It's shorthand for 'caused by.'"],
+    ["ppx", "Prophylaxis (prevention)", ["Physical exam", "Prior prescription", "Post-procedure exam"], "ppx = treatment given to prevent something, here blood clots (DVT = deep vein thrombosis)."]
+  ]},
+
+{ id: "gi-colonoscopy", specialty: "Gastroenterology", setting: "Outpatient",
+  type: "Procedure Note", title: "Screening colonoscopy", reviewed: false,
+  note: `PROCEDURE NOTE: COLONOSCOPY
+[[HOSPITAL]] Endoscopy Suite    Date: [[DATE]]
+Endoscopist: [[PROVIDER]], MD
+
+Indication: Pt is a 52 y/o F for average-risk {CRC} screening;
+also reports intermittent {hematochezia}.
+Sedation: {MAC} per anesthesia
+
+Findings:
+- Prep adequate (Boston Bowel Prep Score 8)
+- 6 mm sessile polyp in sigmoid colon, removed w/ cold snare
+  ({polypectomy}); retrieved for path
+- Scattered {diverticulosis} of the sigmoid colon
+- Small non-bleeding internal hemorrhoids on retroflexion
+
+Impression: As above. {EBL} minimal. No complications.
+Recs: F/u pathology; surveillance interval per path results.
+High-fiber diet.`,
+  qs: [
+    ["CRC", "Colorectal cancer", ["Chronic renal condition", "Complete red-cell count", "Cardiac rhythm check"], "CRC = colorectal cancer. U.S. guidelines start average-risk screening at age 45."],
+    ["hematochezia", "Bright red blood passed from the rectum", ["Vomiting blood", "Black, tarry stool", "Blood in the urine"], "Hemat/o (blood) + -chezia (stool). Compare: hematemesis = vomiting blood; melena = black, tarry stool; hematuria = blood in urine."],
+    ["MAC", "Monitored anesthesia care (sedation)", ["Minimum alveolar concentration", "Mycobacterium avium complex", "Mid-arm circumference"], "In a procedure note, MAC = monitored anesthesia care. In an infectious disease note, it's Mycobacterium avium complex. Context matters."],
+    ["polypectomy", "Surgical removal of a polyp", ["Cutting into a polyp", "Inflammation of a polyp", "Visual exam for polyps"], "-ectomy = removal. Compare -otomy (cutting into) and -itis (inflammation)."],
+    ["diverticulosis", "Having small pouches in the colon wall", ["Inflammation of colon pouches", "Narrowing of the colon", "Bleeding from the colon"], "-osis = condition. Diverticulosis means the pouches are present. Diverticulitis (-itis) means they're inflamed."],
+    ["EBL", "Estimated blood loss", ["Endoscopic bowel lesion", "Early bowel leak", "Elevated bilirubin level"], "EBL = estimated blood loss, which is documented in procedure and operative notes."]
+  ]},
+
+{ id: "neph-ckd", specialty: "Nephrology", setting: "Outpatient",
+  type: "Clinic Note", title: "Planning for dialysis", reviewed: false,
+  note: `NEPHROLOGY CLINIC NOTE
+Referred by: [[PROVIDER]]    Visit: [[DATE]]
+
+Pt is a 61 y/o M w/ CKD stage 4 from diabetic {nephropathy}, here
+to discuss progression. Mild fatigue; no uremic sx.
+
+Labs: Cr 3.1, {eGFR} 21, K 5.4, HCO3 19, Hgb 9.8
+      Urine albumin-to-creatinine ratio 1,200 mg/g
+Exam: BP 152/90, 1+ LE edema
+
+A/P:
+1. CKD 4 — reviewed {RRT} options: hemodialysis, {PD}, and
+   kidney transplant. Refer to vascular surgery for {AVF} eval.
+2. {Hyperkalemia} — low-K diet education; start patiromer
+3. Anemia of CKD — check iron studies; consider {ESA}`,
+  qs: [
+    ["nephropathy", "Kidney disease", ["Nerve disease", "Kidney stone", "Kidney inflammation"], "Nephr/o (kidney) + -pathy (disease). Nephritis = kidney inflammation; nephrolithiasis = kidney stones."],
+    ["eGFR", "Estimated glomerular filtration rate", ["Electronic general function report", "Elevated glucose filtration ratio", "End-stage graft failure risk"], "eGFR estimates how well the kidneys filter blood. 15–29 = stage 4 CKD; under 15 = stage 5."],
+    ["RRT", "Renal replacement therapy (dialysis or transplant)", ["Rapid response team", "Respiratory rate trend", "Routine renal test"], "In a kidney note, RRT = renal replacement therapy. Hospital-wide, RRT often means rapid response team."],
+    ["PD", "Peritoneal dialysis", ["Parkinson's disease", "Pulmonary disease", "Progressive disease"], "Here PD = peritoneal dialysis, which uses the abdominal lining as a filter. In neurology PD = Parkinson's disease; in oncology, progressive disease."],
+    ["AVF", "Arteriovenous fistula", ["Aortic valve failure", "Atrioventricular flow", "Acute vascular fracture"], "An AVF is a surgical connection between an artery and a vein, usually in the arm, used for hemodialysis access."],
+    ["Hyperkalemia", "High potassium in the blood", ["High calcium in the blood", "High sodium in the blood", "Low potassium in the blood"], "Hyper- (high) + kal (kalium, Latin for potassium, symbol K) + -emia (blood condition). Natr/i = sodium; calc/i = calcium."],
+    ["ESA", "Erythropoiesis-stimulating agent", ["Early-stage anemia", "Endocrine screening assay", "Electrolyte stabilizing agent"], "An ESA is a medication that boosts red blood cell production. Erythr/o (red) + -poiesis (formation)."]
+  ]},
+
+{ id: "endo-dka", specialty: "Endocrinology", setting: "Inpatient",
+  type: "Consult Note", title: "When the pump fails", reviewed: false,
+  note: `ENDOCRINOLOGY CONSULT
+Requesting: [[PROVIDER]] (Hospital Medicine)    Date: [[DATE]]
+Reason for consult: {DKA} management
+
+Pt is a 24 y/o F w/ T1DM (dx age 11) on insulin pump, presenting
+w/ {N/V}, abd pain, and {polyuria} x 2 days after pump site failure.
+
+Labs: Glucose 486, {AG} 24, HCO3 9, pH 7.12,
+      beta-hydroxybutyrate 6.2, K 5.1
+
+A/P: Severe DKA
+- Insulin {gtt} per DKA protocol
+- IVF: 0.9% NS; add dextrose when BG < 250
+- Add K to fluids once K < 5.0; goal K 4–5
+- Close AG before transition to {SQ} basal-bolus insulin (2-hr overlap)
+- Diabetes education & pump troubleshooting before {d/c}`,
+  qs: [
+    ["DKA", "Diabetic ketoacidosis", ["Diabetic kidney acute injury", "Diabetic keratitis", "Dehydration, ketotic, acute"], "Without insulin, the body burns fat and makes acidic ketones. Ket/o (ketones) + acid + -osis (condition)."],
+    ["N/V", "Nausea and vomiting", ["Normal vitals", "Neurovascular", "No visitors"], "N/V = nausea and vomiting. You'll also see N/V/D (plus diarrhea)."],
+    ["polyuria", "Excessive urination", ["Excessive thirst", "Painful urination", "Blood in the urine"], "Poly- (much) + -uria (urine). Painful urination = dysuria; blood in urine = hematuria."],
+    ["AG", "Anion gap", ["Arterial gas", "Acute gastritis", "Anticipatory guidance"], "The anion gap is a calculated lab value: Na − (Cl + HCO₃). A high gap points to acids like ketones. In a pediatric well visit, AG means anticipatory guidance."],
+    ["gtt", "Continuous IV drip (infusion)", ["Glucose tolerance test", "Gastrostomy tube", "Every 2 hours"], "gtt comes from the Latin guttae (drops). An 'insulin gtt' is a continuous IV insulin drip."],
+    ["SQ", "Subcutaneous (under the skin)", ["Sequential", "Square (body surface area)", "Semi-quantitative"], "Sub- (under) + cutane (skin). You may also see SC or subcut. ISMP lists 'SQ' and 'SC' as error-prone, so 'subcut' is preferred."],
+    ["d/c", "Discharge (from the hospital)", ["Discontinue", "Direct current", "Double-checked"], "Here d/c = discharge. But d/c also means discontinue ('d/c the heparin'). That ambiguity causes errors, so many hospitals discourage it."]
+  ]},
+
+{ id: "id-osteo", specialty: "Infectious Disease", setting: "Inpatient",
+  type: "Consult Note", title: "The foot that won't heal", reviewed: false,
+  note: `INFECTIOUS DISEASE CONSULT
+Requesting: [[PROVIDER]]    Date: [[DATE]]
+
+Pt is a 55 y/o M w/ poorly controlled DM2 and PVD admitted w/ R foot
+ulcer and surrounding {erythema}. Probe-to-bone positive.
+
+Tmax 38.9. WBC 16.2, ESR 88, CRP 14.0
+MRI R foot: findings {c/w} {osteomyelitis} of 1st metatarsal head
+{BCx} x 2: {NGTD} at 48 hrs.   Wound cx: {MRSA}
+Allergies: PCN (hives)
+
+A/P: Acute osteomyelitis R 1st MT w/ overlying cellulitis
+- Continue vancomycin IV, dosing per pharmacy (AUC-guided)
+- Podiatry for debridement and bone bx
+- Anticipate 6 wks IV abx via {PICC}; OPAT referral`,
+  qs: [
+    ["erythema", "Redness of the skin", ["Swelling", "Itching", "Warmth"], "Erythr/o = red. Erythema is skin redness, a sign of inflammation or infection."],
+    ["c/w", "Consistent with", ["Complicated with", "Compared with", "Continue with"], "Radiologists and consultants write c/w to say the findings support a diagnosis."],
+    ["osteomyelitis", "Infection/inflammation of bone and bone marrow", ["Inflammation of a joint", "Softening of the bones", "Tumor of the bone marrow"], "Oste/o (bone) + myel/o (marrow) + -itis (inflammation)."],
+    ["BCx", "Blood cultures", ["Bone culture", "Bacterial count", "Biopsy complex"], "The 'x' shorthand again: cx = culture, bx = biopsy, abx = antibiotics."],
+    ["NGTD", "No growth to date", ["Negative Gram test, direct", "Not good to discharge", "Nasogastric tube drainage"], "NGTD = nothing has grown yet, but the lab is still watching the cultures."],
+    ["MRSA", "Methicillin-resistant Staphylococcus aureus", ["Multi-resistant streptococcal abscess", "Methicillin-responsive Staph aureus", "MRI-suspected abscess"], "MRSA is a Staph bacterium resistant to many common antibiotics, which is why vancomycin is used here."],
+    ["PICC", "Peripherally inserted central catheter", ["Primary intensive care consult", "Percutaneous IV cannula clamp", "Post-infection care center"], "A PICC line goes in through the arm and threads to a large vein near the heart. It allows weeks of IV antibiotics at home."]
+  ]},
+
+{ id: "neuro-stroke", specialty: "Neurology", setting: "Inpatient",
+  type: "Stroke Code Note", title: "Time is brain", reviewed: false,
+  note: `NEUROLOGY — STROKE CODE NOTE
+Date: [[DATE]]    Hospital: [[HOSPITAL]]
+
+Pt is a 78 y/o F, {LKW} 13:40 per husband ([[NAME]]). Found w/
+R-sided weakness and {aphasia}. NIHSS 14.
+
+Exam: L gaze preference, R {hemiparesis} (arm > leg),
+R facial droop, expressive aphasia
+
+CTA head/neck: L {MCA} M1 occlusion
+Non-contrast CT head: no {ICH}
+
+A/P: Acute ischemic {CVA}, L MCA territory
+- IV tPA given 14:52 (within window)
+- Emergent thrombectomy w/ IR
+- Admit Neuro ICU; BP < 180/105 post-lysis
+- {NPO} until bedside swallow screen passed`,
+  qs: [
+    ["LKW", "Last known well", ["Left knee weakness", "Level of knowledge, written", "Last kidney workup"], "LKW = the last time the patient was seen at their normal baseline. It sets the clock for stroke treatment decisions."],
+    ["aphasia", "Loss of ability to produce or understand language", ["Difficulty swallowing", "Loss of voice", "Inability to move"], "A- (without) + -phasia (speech). Don't mix it up with dysphagia (difficulty swallowing) or aphonia (loss of voice)."],
+    ["hemiparesis", "Weakness on one side of the body", ["Paralysis of both legs", "Weakness of all four limbs", "Numbness on one side"], "Hemi- (half) + -paresis (weakness). Hemiplegia = paralysis of one side."],
+    ["MCA", "Middle cerebral artery", ["Main carotid artery", "Motor cortex area", "Medial cerebellar artery"], "The MCA supplies much of the side of the brain. Left MCA strokes often cause right-sided weakness and language problems."],
+    ["ICH", "Intracerebral hemorrhage (bleeding in the brain)", ["Increased cranial hypertension", "Intensive care, high acuity", "Ischemic cortical hypoxia"], "Intra- (within) + cerebr/o (brain) + hemorrhage. A bleed must be ruled out before giving clot-busting tPA."],
+    ["CVA", "Cerebrovascular accident (stroke)", ["Cardiovascular assessment", "Costovertebral angle", "Central venous access"], "CVA = stroke. In an abdominal or urology exam, 'CVA tenderness' means the costovertebral angle (the flank)."],
+    ["NPO", "Nothing by mouth", ["No pain observed", "Not per orders", "Nasopharyngeal oxygen"], "NPO = nil per os, Latin for 'nothing by mouth.' Stroke patients can have trouble swallowing, so they're screened first."]
+  ]},
+
+{ id: "psych-inpatient", specialty: "Psychiatry", setting: "Inpatient",
+  type: "Admission Note", title: "Admitted for safety", reviewed: false,
+  note: `INPATIENT PSYCHIATRY — ADMISSION NOTE
+Unit: [[HOSPITAL]] Behavioral Health    Date: [[DATE]]
+Legal status: Voluntary
+
+Pt is a 34 y/o M w/ hx of {MDD} and GAD, brought in by family for
+worsening depression and passive {SI} w/o plan or intent. Endorses
+{anhedonia}, poor sleep, 10 lb wt loss. Denies HI or {AVH}.
+
+{MSE}: Disheveled, psychomotor slowing. Mood "empty"; affect
+constricted, congruent. Thought process linear. No evidence of
+psychosis. Insight and judgment fair.
+
+{SUD}: EtOH ~4 drinks/night; last drink 2 days ago.
+
+A/P: MDD, recurrent, severe, w/o psychotic features
+- Safety: q15-min checks
+- Start sertraline 50 mg daily
+- {CIWA} monitoring for alcohol withdrawal
+- Individual & group therapy; SW for family meeting`,
+  qs: [
+    ["MDD", "Major depressive disorder", ["Manic depressive disorder", "Mood dysregulation diagnosis", "Multiple drug dependence"], "MDD = major depressive disorder. GAD = generalized anxiety disorder."],
+    ["SI", "Suicidal ideation", ["Sensory integration", "Social isolation", "Sacroiliac"], "SI = suicidal thoughts. 'Passive' and 'w/o plan or intent' describe severity. In an orthopedic note, SI joint = sacroiliac."],
+    ["anhedonia", "Inability to feel pleasure", ["Loss of appetite", "Inability to sleep", "Lack of emotion in the voice"], "An- (without) + hedon (pleasure). It's a core symptom of depression."],
+    ["AVH", "Auditory or visual hallucinations", ["Acute ventricular hypertrophy", "Atrioventricular heart block", "Anxiety with visual hypervigilance"], "AVH = hearing or seeing things that aren't there. HI = homicidal ideation."],
+    ["MSE", "Mental status exam", ["Medical screening exam", "Mood and sleep evaluation", "Motor-sensory exam"], "The MSE is psychiatry's version of the physical exam. It covers appearance, behavior, mood, affect, thought process, insight, and judgment."],
+    ["SUD", "Substance use disorder", ["Sudden unexplained death", "Sleep-related urinary disorder", "Severe unipolar depression"], "SUD = substance use disorder (here, alcohol: EtOH = ethanol)."],
+    ["CIWA", "An alcohol-withdrawal severity scale", ["A suicide-risk checklist", "A depression severity score", "A drug-interaction warning"], "CIWA (Clinical Institute Withdrawal Assessment for Alcohol) guides monitoring and medication during alcohol withdrawal."]
+  ]},
+
+{ id: "psych-outpatient", specialty: "Psychiatry", setting: "Outpatient",
+  type: "Medication Management", title: "Stable and improving", reviewed: false,
+  note: `OUTPATIENT PSYCHIATRY — MEDICATION MANAGEMENT
+Visit: [[DATE]]    Last visit: 8 wks ago
+
+Pt is a 27 y/o F w/ ADHD and {BPAD} II. Mood stable on lamotrigine.
+Denies {SE}s incl. rash. Sleeping 7 hrs/night. No hypomanic {sx}.
+
+Screeners: {PHQ-9} 4 (prev 14); GAD-7 5
+
+Plan:
+- Cont lamotrigine 200 mg PO daily
+- Cont methylphenidate ER 36 mg {qAM}
+- {PDMP} reviewed, no concerns
+- RTC 3 mo; continue weekly therapy w/ [[PROVIDER]], LCSW`,
+  qs: [
+    ["BPAD", "Bipolar affective disorder", ["Borderline personality and anxiety disorder", "Behavioral problem, attention deficit", "Brief psychotic affective disorder"], "Type II bipolar involves depression plus hypomania, which is a milder high than full mania."],
+    ["SE", "Side effects", ["Serious event", "Skin exam", "Sleep efficiency"], "SE = side effects. Rash is an important one to ask about with lamotrigine."],
+    ["sx", "Symptoms", ["Suicidal thoughts", "Sedation", "Signs on exam"], "sx = symptoms. It belongs to the 'x' family with Hx, Dx, and Tx."],
+    ["PHQ-9", "A 9-item depression screening questionnaire", ["A 9-point pain scale", "A physical health questionnaire for children", "A 9-item anxiety screener"], "PHQ-9 scores depression severity from 0 to 27. A drop from 14 to 4 shows strong improvement. GAD-7 is the anxiety equivalent."],
+    ["qAM", "Every morning", ["Every hour after meals", "Before meals", "As needed in the morning"], "q (quaque, every) + AM (morning). Compare qHS = every night at bedtime."],
+    ["PDMP", "Prescription drug monitoring program", ["Patient daily medication plan", "Psychiatric diagnosis & management protocol", "Pharmacy dose-modification policy"], "A PDMP is a state database of controlled-substance prescriptions. Prescribers check it before prescribing stimulants like methylphenidate."]
+  ]},
+
+{ id: "sw-discharge", specialty: "Social Work", setting: "Inpatient",
+  type: "Psychosocial Assessment", title: "Getting home safely", reviewed: false,
+  note: `SOCIAL WORK — PSYCHOSOCIAL ASSESSMENT & DISCHARGE PLANNING
+Date: [[DATE]]    Unit: [[HOSPITAL]] 5 West
+
+Pt is a 66 y/o M admitted for CHF exacerbation. Lives alone in a
+2nd-floor apt at [[LOCATION]]. Referred for d/c planning.
+
+Pt reports running out of food before month's end and missing
+cardiology appts {d/t} lack of transportation. Insurance: Medicare
++ Medicaid ({dual-eligible}).
+{ADLs}: independent. {IADLs}: needs help w/ shopping & medications.
+{SDOH} screen (+) for transportation, food insecurity, social isolation.
+
+Plan:
+- {SNF} vs home w/ home health; awaiting PT/OT recs; pt prefers home
+- Referrals: Medicaid transportation, home-delivered meals
+- {HCP}: niece [[NAME]], [[PHONE]]
+- Pt has decision-making capacity and agrees w/ plan`,
+  qs: [
+    ["d/t", "Due to", ["Discharge today", "Daily treatment", "Diagnostic test"], "d/t = due to. Don't confuse it with d/c (discharge or discontinue)."],
+    ["dual-eligible", "Enrolled in both Medicare and Medicaid", ["Eligible for two hospitals", "Qualified for two surgeries", "Covered by two private insurers"], "Dual-eligible patients often have complex medical and social needs, which is why social work gets involved."],
+    ["ADLs", "Activities of daily living (bathing, dressing, eating, toileting)", ["Advance directive legal status", "Admission day labs", "Assisted daily living facility"], "ADLs are basic self-care tasks. IADLs are more complex tasks needed to live independently."],
+    ["IADLs", "Instrumental activities of daily living (shopping, meds, finances)", ["Inpatient admission daily logs", "Independent adult living status", "Intensive assisted daily living"], "IADLs include managing medications, money, transportation, cooking, and shopping."],
+    ["SDOH", "Social determinants of health", ["Standard documentation of health", "Severe disease of the heart", "State department of health"], "SDOH are the conditions where people live, work, and age (housing, food, transportation) that shape health outcomes. Many EHRs now capture them as structured screening data."],
+    ["SNF", "Skilled nursing facility", ["Standard nursing form", "Senior nutrition fund", "Short-notice follow-up"], "A SNF ('sniff') provides short-term rehab or nursing care after a hospital stay."],
+    ["HCP", "Health care proxy (decision-maker)", ["Health care provider", "Home care plan", "High cholesterol panel"], "Here HCP = health care proxy, the person who makes medical decisions if the patient can't. Elsewhere, HCP often means health care provider."]
+  ]},
+
+{ id: "ob-prenatal", specialty: "Obstetrics & Gynecology", setting: "Outpatient",
+  type: "Prenatal Visit", title: "Third trimester check-in", reviewed: false,
+  note: `PRENATAL VISIT
+Visit: [[DATE]]    Provider: [[PROVIDER]], CNM
+
+Pt is a 31 y/o {G2P1001} at 28w3d by 8-wk US. {EDD} [[DATE]].
+Denies {LOF}, VB, or ctx. (+) {FM}.
+
+BP 118/72. Fundal height 28 cm. {FHR} 145 by Doppler.
+
+1-hr {GCT}: 152 mg/dL (elevated) → schedule 3-hr GTT
+Blood type: Rh negative → RhoGAM given today
+Tdap given today
+
+Plan: Reviewed {PTL} precautions and kick counts. RTC 2 wks.`,
+  qs: [
+    ["G2P1001", "2 pregnancies; 1 term birth, 0 preterm, 0 miscarriages/abortions, 1 living child", ["2 pregnancies, 1 living child, 1001 grams at birth", "Grade 2 placenta, position 1", "Gestation week 2, first prenatal visit"], "G = gravida (number of pregnancies, including the current one). P follows TPAL: Term, Preterm, Abortions (including miscarriage), Living."],
+    ["EDD", "Estimated date of delivery (due date)", ["Early delivery date", "Expected discharge date", "Epidural dose documented"], "Notice the EDD itself is redacted. It's a date, and dates are PHI."],
+    ["LOF", "Leakage of fluid", ["Loss of function", "Level of fetus", "Low oxygen flow"], "LOF = leakage of amniotic fluid. VB = vaginal bleeding; ctx = contractions."],
+    ["FM", "Fetal movement", ["Family medicine", "Fundal measurement", "Full monitoring"], "(+) FM means the patient feels the baby moving, which is reassuring."],
+    ["FHR", "Fetal heart rate", ["Family health record", "Fundal height ratio", "Full heart rhythm"], "A normal FHR is about 110–160 beats per minute."],
+    ["GCT", "Glucose challenge test", ["Gestational contraction test", "Glucose control target", "Group C strep test"], "This 1-hour screen checks for gestational diabetes. An abnormal result leads to a 3-hour glucose tolerance test (GTT)."],
+    ["PTL", "Preterm labor", ["Post-term labor", "Placental tissue loss", "Prolonged third stage of labor"], "PTL = labor before 37 weeks. Patients are taught warning signs ('precautions')."]
+  ]},
+
+{ id: "peds-bronchiolitis", specialty: "Pediatrics", setting: "Inpatient",
+  type: "Admission H&P", title: "A wheezy infant", reviewed: false,
+  note: `PEDIATRIC HOSPITAL MEDICINE — ADMISSION H&P
+Date: [[DATE]]    PCP: [[PROVIDER]]
+
+Pt is a 4 mo old M, former 36-wk preemie, w/ 3 days of {URI} sx,
+now w/ increased {WOB} and poor PO intake (< 50% of baseline).
+Immunizations {UTD}. Sick contact: sibling at daycare.
+
+Exam: T 38.1, RR 62, SpO2 89% RA
+Subcostal {retractions}, nasal flaring, diffuse wheezes & crackles
+Wet diapers: 2 in past 24 hrs
+
+RSV PCR: positive
+
+A/P: RSV {bronchiolitis} w/ hypoxemia and mild dehydration
+- {HFNC} 1 L/kg/min; wean as tolerated
+- Nasal suctioning {PRN}; NG feeds if PO remains poor
+- Supportive care (no albuterol/steroids per AAP guideline)`,
+  qs: [
+    ["URI", "Upper respiratory infection", ["Urinary infection", "Upper renal insufficiency", "Unexplained respiratory illness"], "URI = a cold-like infection of the nose and throat. Don't confuse it with UTI (urinary tract infection)."],
+    ["WOB", "Work of breathing", ["Wheezing on both sides", "Weight of baby", "Worsening of bronchitis"], "Increased WOB means the child is working harder to breathe."],
+    ["UTD", "Up to date", ["Urinary tract disease", "Under treatment daily", "Unable to determine"], "Immunizations UTD = all recommended vaccines received for age."],
+    ["retractions", "Skin pulling inward between or below the ribs with each breath", ["Pulling away from touch", "Shrinking of the lungs", "Vomiting after feeds"], "Retractions are a visible sign of increased work of breathing in infants."],
+    ["bronchiolitis", "Inflammation of the small airways (bronchioles)", ["Inflammation of the voice box", "Collapse of a lung", "Infection of the lung tissue (pneumonia)"], "Bronchiol (small airways) + -itis (inflammation). It's usually viral, and RSV is the most common cause."],
+    ["HFNC", "High-flow nasal cannula", ["Heart failure, neonatal care", "Humidified face-mask nebulizer", "High-frequency neonatal compression"], "HFNC delivers warmed, humidified oxygen at high flow through soft nasal prongs."],
+    ["PRN", "As needed", ["Every morning", "Before meals", "Per rectum"], "PRN = pro re nata, Latin for 'as the occasion arises.'"]
+  ]},
+
+{ id: "peds-wellchild", specialty: "Pediatrics", setting: "Outpatient",
+  type: "Well-Child Visit", title: "Happy first birthday", reviewed: false,
+  note: `WELL-CHILD CHECK — 12 MONTHS
+Date: [[DATE]]    Accompanied by: mother
+
+Pt is a 12 mo old F here for {WCC}. Born {FT} via {NSVD}, no NICU stay.
+
+Growth: Wt 50th %ile, Length 60th %ile, {OFC} 45th %ile — tracking well
+Development: pulls to stand, cruises, says "mama/dada" w/ meaning,
+pincer grasp. Meeting milestones.
+Diet: transitioning to whole milk, 16–20 oz/day
+
+Labs: Hgb 11.8; {BLL} pending
+Vaccines today: MMR, varicella, Hep A, PCV #4
+
+{AG}: rear-facing car seat, water safety, establish dental home
+RTC at 15 mo for WCC`,
+  qs: [
+    ["WCC", "Well-child check", ["Wound care clinic", "White cell count", "Weight/crown check"], "A WCC is a routine preventive visit for growth, development, and vaccines."],
+    ["FT", "Full term", ["Failure to thrive", "Feeding tube", "Fever, temperature"], "FT = born at 37+ weeks. Careful: FTT = failure to thrive."],
+    ["NSVD", "Normal spontaneous vaginal delivery", ["Neonatal standard vital documentation", "No significant visible defects", "Non-surgical ventricular delivery"], "Compare C/S = cesarean section."],
+    ["OFC", "Occipitofrontal circumference (head size)", ["Oral feeding capacity", "Overall fitness check", "Optic fundus check"], "OFC is measured around the head from the forehead (front) to the occiput (back)."],
+    ["BLL", "Blood lead level", ["Bilateral lower limbs", "Baseline lab list", "Bilirubin level"], "Lead screening is typically done around 12 and 24 months."],
+    ["AG", "Anticipatory guidance", ["Anion gap", "Allergy group", "Assessment of growth"], "In pediatrics, AG = safety and development advice for the next stage. In an inpatient lab-heavy note (like the DKA case), AG = anion gap."]
+  ]},
+
+{ id: "surg-appy", specialty: "General Surgery", setting: "Inpatient",
+  type: "Progress Note (SOAP)", title: "The morning after surgery", reviewed: false,
+  note: `GENERAL SURGERY PROGRESS NOTE — {POD} #1
+Date: [[DATE]]    Attending: [[PROVIDER]]
+
+S: Pt is a 19 y/o M s/p {lap appy} for acute appendicitis.
+Pain controlled on PO meds. (+) {flatus}, no BM yet. Tolerating
+clear liquids. Ambulating w/ assist. No N/V.
+
+O: Afebrile, {VSS}
+Abd: soft, appropriately {TTP} near port sites
+Incisions: {C/D/I}
+
+A: POD #1 s/p uncomplicated lap appy, recovering well
+
+P:
+- Advance to regular diet
+- {IS} 10x/hr while awake
+- Home today if tolerating diet; f/u in clinic 2 wks`,
+  qs: [
+    ["POD", "Post-operative day", ["Point of discharge", "Pain on defecation", "Patient on drip"], "POD #1 = the first day after surgery. The day of surgery is POD #0."],
+    ["lap appy", "Laparoscopic appendectomy", ["Lap-band appendix procedure", "Laparotomy with appendix repair", "Lower abdominal pain, appendicitis"], "Lapar/o (abdomen) + -scopy (viewing through small incisions); append + -ectomy (removal)."],
+    ["flatus", "Passing gas", ["Bowel movement", "Belching", "Abdominal bloating"], "Flatus is a key sign that bowel function is returning after surgery."],
+    ["VSS", "Vital signs stable", ["Venous sinus sampling", "Very small scar", "Visual symptom score"], "VSS = heart rate, blood pressure, breathing, and temperature are stable."],
+    ["TTP", "Tender to palpation", ["Time to procedure", "Thrombotic thrombocytopenic purpura", "Tolerating the plan"], "TTP = tender when pressed. In hematology, TTP is a blood disorder (thrombotic thrombocytopenic purpura)."],
+    ["C/D/I", "Clean, dry, intact", ["Closed, drained, irrigated", "Clear discharge, inflamed", "Covered, dressed, immobilized"], "C/D/I is the standard way to document a healthy-looking incision or dressing."],
+    ["IS", "Incentive spirometry (a deep-breathing device)", ["Intravenous saline", "Intake status", "Incision site"], "An IS is a handheld device patients breathe into to keep their lungs open after surgery."]
+  ]},
+
+{ id: "ortho-hip", specialty: "Orthopaedic Surgery", setting: "Inpatient",
+  type: "Consult Note", title: "A fall at home", reviewed: false,
+  note: `ORTHOPAEDIC SURGERY CONSULT
+Date: [[DATE]]    Requesting: [[PROVIDER]] (ED)
+
+Pt is a [[AGE 90+]] y/o F from an {ALF} s/p mechanical fall at
+[[LOCATION]] this AM, unable to bear weight.
+
+Exam: L leg shortened & externally rotated. {NVI} distally.
+Skin intact.
+XR L hip: displaced femoral neck {fx} (Garden IV)
+
+A/P: L displaced femoral neck fx
+- L hip {hemiarthroplasty} tomorrow; NPO after {MN}
+- {WBAT} post-op
+- VTE ppx: enoxaparin
+- Geriatrics co-management for delirium prevention`,
+  qs: [
+    [null, "HIPAA Safe Harbor treats ages over 89 as identifiers, so they're removed or grouped as '90+'", ["The patient refused to give her age", "Ages are always removed from orthopaedic notes", "The age was unknown to the ED"], "Very old ages are rare enough to help identify someone, so Safe Harbor treats ages 90+ as identifiers. Datasets often replace them with a single category like '90+'.", "Unlike most notes, this patient's age was removed. Why?", "AGE 90+"],
+    ["ALF", "Assisted living facility", ["Acute liver failure", "Advanced life functions", "Anterior lateral femur"], "Here ALF = assisted living facility. In a hepatology note, ALF = acute liver failure."],
+    ["NVI", "Neurovascularly intact (normal nerves and blood flow)", ["No visible injury", "Non-viable ischemia", "Nerve and vein injury"], "After any fracture, clinicians check that nerves and blood supply below the injury are working."],
+    ["fx", "Fracture", ["Function", "Fixation", "Flexion"], "fx = fracture. It's part of the 'x' shorthand family."],
+    ["hemiarthroplasty", "Replacement of half of a joint", ["Removal of half the pelvis", "Repair of a torn tendon", "Fusion of a joint"], "Hemi- (half) + arthr/o (joint) + -plasty (surgical repair). Only the femoral head (ball) side is replaced."],
+    ["MN", "Midnight", ["Morning", "Medical necessity", "Motor nerve"], "'NPO after MN' = nothing by mouth after midnight before surgery."],
+    ["WBAT", "Weight bearing as tolerated", ["Wound bed assessment today", "Wheelchair-bound at all times", "Weekly bone assessment test"], "Other weight-bearing orders include NWB (non-weight bearing), TTWB (toe-touch), and PWB (partial)."]
+  ]},
+
+{ id: "onc-chemo", specialty: "Hematology / Oncology", setting: "Outpatient",
+  type: "Pre-Treatment Visit", title: "Cleared for cycle 3", reviewed: false,
+  note: `HEMATOLOGY/ONCOLOGY CLINIC — PRE-TREATMENT VISIT
+Date: [[DATE]]    Infusion center: [[HOSPITAL]]
+
+Pt is a 59 y/o F w/ stage IV {NSCLC} (adenocarcinoma, EGFR/ALK neg)
+presenting for {C3D1} of carboplatin/pemetrexed + pembrolizumab.
+
+Interval hx: Fatigue, mild nausea. {ECOG} 1. No fevers.
+Labs: WBC 4.1, {ANC} 2,300, Hgb 10.2, Plt 168
+
+A/P: Tolerating {tx}; labs meet parameters → proceed w/ C3D1
+- Ondansetron PRN nausea
+- Restaging CT after cycle 4
+- Reviewed {neutropenic} fever precautions
+- Referral to {palliative} care for symptom mgmt`,
+  qs: [
+    ["NSCLC", "Non-small cell lung cancer", ["Non-specific chronic lung condition", "Neuroendocrine small cell lung cancer", "New suspicious chest lesion"], "NSCLC is the most common type of lung cancer. Adenocarcinoma is one subtype."],
+    ["C3D1", "Cycle 3, day 1 of treatment", ["Cancer stage 3, grade 1", "Chemo dose 3 of 1", "Carboplatin 3 mg, day 1"], "Chemotherapy is given in repeating cycles. C3D1 = the first day of the third cycle."],
+    ["ECOG", "A performance status score (how well the patient functions day to day)", ["A heart rhythm test", "A tumor-size measurement", "A chemotherapy protocol"], "The ECOG scale runs from 0 (fully active) to 4 (completely disabled). It helps decide whether treatment is safe."],
+    ["ANC", "Absolute neutrophil count", ["Average nodule count", "Anemia of chronic disease", "Antinuclear cytology"], "Neutrophils fight bacterial infection. An ANC under 1,500 = neutropenia."],
+    ["tx", "Treatment", ["Toxicity", "Test results", "Taxane chemotherapy"], "tx = treatment. Some specialties also use Tx for transplant."],
+    ["neutropenic", "Having too few neutrophils (infection-fighting white cells)", ["Having too many neutrophils", "Having too few platelets", "Having nerve damage"], "Neutr/o (neutrophil) + -penia (deficiency). Too few platelets = thrombocytopenia."],
+    ["palliative", "Care focused on relieving symptoms and improving quality of life", ["Care only in the last days of life", "Care intended to cure the cancer", "Care provided only in a hospital"], "Palliative care can happen alongside active treatment. Hospice is a specific type of care for the end of life."]
+  ]},
+
+{ id: "derm-lesion", specialty: "Dermatology", setting: "Outpatient",
+  type: "Clinic Note", title: "A changing mole", reviewed: false,
+  note: `DERMATOLOGY CLINIC NOTE
+Date: [[DATE]]    Referring: [[PROVIDER]]
+
+Pt is a 45 y/o M, {FST} II, referred for a changing mole on back.
+
+Exam:
+- 8 mm asymmetric pigmented {macule}, L upper back; irregular
+  borders, color variegation. Dermoscopy: atypical network.
+- Multiple {AK}s on scalp
+- Few well-demarcated {erythematous} plaques w/ silvery scale on elbows
+
+A/P:
+1. Atypical pigmented lesion, {r/o} melanoma — deep shave {bx}
+   (saucerization) today
+2. AKs — cryotherapy x 6 w/ liquid nitrogen
+3. Psoriasis, mild — clobetasol 0.05% oint BID x 2 wks
+Sun-protection counseling. {FBSE} q 6–12 mo.`,
+  qs: [
+    ["FST", "Fitzpatrick skin type (a sun-sensitivity scale)", ["Full skin test", "Fungal skin test", "Follicle scaling type"], "Type I always burns and never tans; type VI rarely burns. It helps estimate skin cancer risk."],
+    ["macule", "A flat, discolored spot on the skin", ["A raised, solid bump", "A fluid-filled blister", "A pus-filled bump"], "Raised = papule; fluid-filled = vesicle; pus-filled = pustule. A flat spot larger than 1 cm is called a patch."],
+    ["AK", "Actinic keratosis (a precancerous sun-damage spot)", ["Allergic keratitis", "Acute keloid", "Above-knee"], "Actin- (ray, sun) + kerat/o (keratin) + -osis. In an amputation note, AK = above-knee."],
+    ["erythematous", "Red", ["Itchy", "Scaly", "Swollen"], "Erythr/o = red. 'Erythematous plaques with silvery scale' is the classic description of psoriasis."],
+    ["r/o", "Rule out", ["Referred out", "Recurrent onset", "Reassess orders"], "r/o = a diagnosis being considered that needs testing to confirm or exclude."],
+    ["bx", "Biopsy", ["Bandage", "Bilateral excision", "Bacterial culture"], "bx = biopsy: removing tissue to examine under a microscope."],
+    ["FBSE", "Full-body skin exam", ["Fasting blood sugar evaluation", "Follow-up biopsy site exam", "Focused baseline skin estimate"], "FBSEs screen for new or changing lesions in higher-risk patients."]
+  ]},
+
+{ id: "ophtho-diabetic", specialty: "Ophthalmology", setting: "Outpatient",
+  type: "Clinic Note", title: "Blurry in one eye", reviewed: false,
+  note: `OPHTHALMOLOGY CLINIC NOTE
+Date: [[DATE]]    MRN: [[MRN]]
+
+Pt is a 70 y/o M w/ DM2 here for annual diabetic eye exam and
+blurry vision {OD}.
+
+{VA} (cc): OD 20/60, {OS} 20/25
+{IOP}: 16 / 15 mmHg
+Slit lamp: 2+ nuclear sclerotic cataract {OU}
+Dilated fundus exam: scattered dot-blot hemorrhages and
+microaneurysms OU; no neovascularization
+OCT: center-involving {DME} OD
+
+A/P:
+1. Moderate {NPDR} OU w/ DME OD — intravitreal anti-VEGF injection OD;
+   f/u 4 wks
+2. Cataract OU — visually significant OD; discuss surgery after
+   DME treated`,
+  qs: [
+    ["OD", "Right eye", ["Left eye", "Both eyes", "Overdose"], "OD = oculus dexter (right eye). ISMP lists OD/OS/OU as error-prone because they get confused with each other and with the ear abbreviations AD/AS/AU."],
+    ["VA", "Visual acuity", ["Veterans Affairs", "Ventricular arrhythmia", "Vitreous abnormality"], "VA = how clearly the patient sees (e.g., 20/60). 'cc' = with correction (glasses); 'sc' = without."],
+    ["OS", "Left eye", ["Right eye", "Both eyes", "Oral suspension"], "OS = oculus sinister (left eye). Sinister is Latin for left."],
+    ["IOP", "Intraocular pressure", ["Intraoperative procedure", "Initial office presentation", "Inferior optic plane"], "Intra- (within) + ocul (eye). Elevated IOP is a glaucoma risk factor."],
+    ["OU", "Both eyes", ["Right eye", "Left eye", "Outpatient unit"], "OU = oculus uterque (each eye, or both eyes)."],
+    ["DME", "Diabetic macular edema", ["Durable medical equipment", "Diffuse macular erosion", "Dilated macular exam"], "In an eye note, DME = swelling of the central retina. In a discharge plan, DME = durable medical equipment like walkers."],
+    ["NPDR", "Non-proliferative diabetic retinopathy", ["No previous diabetic record", "Neovascular proliferative diabetic retinopathy", "Non-progressive diabetic renal disease"], "Retin/o (retina) + -pathy (disease). Non-proliferative means there's no abnormal new blood vessel growth yet."]
+  ]},
+
+{ id: "ent-ears", specialty: "Otolaryngology (ENT)", setting: "Outpatient",
+  type: "Clinic Note", title: "Ear infections and snoring", reviewed: false,
+  note: `OTOLARYNGOLOGY (ENT) CLINIC NOTE
+Date: [[DATE]]    Referring: [[PROVIDER]]
+
+Pt is a 6 y/o M referred for recurrent {AOM} (5 episodes in 12 mo)
+and {OSA} sx: loud snoring, witnessed apneas, daytime irritability.
+
+Exam: bilat {TM}s dull and retracted w/ {MEE}. Tonsils 3+.
+Tympanometry: Type B bilat. Audiogram: mild {CHL} bilat.
+
+A/P:
+1. Recurrent AOM w/ persistent MEE and CHL — recommend bilateral {BMT}
+2. OSA sx w/ tonsillar hypertrophy — {T&A} in same OR session
+Parent ([[NAME]]) consented. Scheduling will call [[PHONE]].`,
+  qs: [
+    ["AOM", "Acute otitis media (middle ear infection)", ["Acute oral mucositis", "Abnormal ocular movement", "Allergic otitis of the mastoid"], "Ot/o (ear) + -itis (inflammation) + media (middle)."],
+    ["OSA", "Obstructive sleep apnea", ["Oral surgery assessment", "Otitis, serous, acute", "Oxygen saturation alert"], "A- (without) + -pnea (breathing): pauses in breathing during sleep because the airway is blocked."],
+    ["TM", "Tympanic membrane (eardrum)", ["Temporomandibular (jaw)", "Tonsil margin", "Throat mucosa"], "Careful: TMJ = temporomandibular joint (the jaw)."],
+    ["MEE", "Middle ear effusion (fluid behind the eardrum)", ["Mastoid ear exam", "Mucosal edema, extensive", "Motor evoked exam"], "Fluid behind the eardrum can muffle hearing for weeks after an infection."],
+    ["CHL", "Conductive hearing loss", ["Chronic hearing loss", "Central hearing lesion", "Cochlear hair loss"], "In CHL, sound can't travel through the middle ear (e.g., because of fluid). Nerve-related loss is SNHL (sensorineural)."],
+    ["BMT", "Bilateral myringotomy with tubes", ["Bone marrow transplant", "Bilateral mastoid tympanoplasty", "Basic metabolic test"], "Myring/o (eardrum) + -otomy (incision), then small tubes are placed. In oncology, BMT = bone marrow transplant."],
+    ["T&A", "Tonsillectomy and adenoidectomy", ["Tonsils and airway", "Tympanometry and audiogram", "Tubes and antibiotics"], "Removing enlarged tonsils and adenoids is the first-line treatment for pediatric OSA."]
+  ]},
+
+{ id: "uro-bph", specialty: "Urology", setting: "Outpatient",
+  type: "Clinic Note", title: "Up all night", reviewed: false,
+  note: `UROLOGY CLINIC NOTE
+Date: [[DATE]]    PCP: [[PROVIDER]]
+
+Pt is a 68 y/o M w/ {LUTS}: {nocturia} x3, weak stream, hesitancy,
+sense of incomplete emptying. IPSS 19 (moderate).
+
+{DRE}: smooth, symmetric, enlarged (~50 g) prostate; no nodules
+{PSA}: 2.8 ng/mL (stable). UA: negative
+{PVR}: 180 mL by bladder scan
+
+A/P: {BPH} w/ LUTS
+- Start tamsulosin 0.4 mg PO {qHS}
+- Consider adding 5-alpha reductase inhibitor if inadequate response
+- Repeat PVR in 6 wks`,
+  qs: [
+    ["LUTS", "Lower urinary tract symptoms", ["Lumbar urethral tract stricture", "Low urine total sodium", "Left ureter tract stone"], "LUTS is an umbrella term for urgency, frequency, weak stream, nocturia, and similar symptoms."],
+    ["nocturia", "Waking at night to urinate", ["Bedwetting", "Painful urination at night", "Blood in urine at night"], "Noct- (night) + -uria (urination). 'x3' = three times a night. Bedwetting = nocturnal enuresis."],
+    ["DRE", "Digital rectal exam", ["Diuretic renal evaluation", "Dilated renal exam", "Direct radiologic exam"], "'Digital' means using a finger (digit)."],
+    ["PSA", "Prostate-specific antigen", ["Post-surgical assessment", "Prostate size approximation", "Pelvic sonographic assessment"], "PSA is a blood test used in prostate cancer screening and monitoring."],
+    ["PVR", "Post-void residual (urine left in the bladder after urinating)", ["Peripheral vascular resistance", "Pulmonary valve replacement", "Prostate volume ratio"], "In a cardiology note, PVR = pulmonary vascular resistance."],
+    ["BPH", "Benign prostatic hyperplasia (non-cancerous enlargement)", ["Bladder pressure, high", "Benign prostate hemorrhage", "Bilateral pelvic hernia"], "Hyper- (excess) + -plasia (growth): too many cells, but benign (not cancer)."],
+    ["qHS", "Every night at bedtime", ["Every hour", "Every half hour", "Four times a day"], "q (quaque, every) + hs (hora somni, hour of sleep). ISMP flags qhs as error-prone because it can be misread as 'qhr' (every hour)."]
+  ]},
+
+{ id: "rheum-ra", specialty: "Rheumatology", setting: "Outpatient",
+  type: "New Patient Visit", title: "Morning stiffness", reviewed: false,
+  note: `RHEUMATOLOGY NEW PATIENT VISIT
+Date: [[DATE]]    Referring: [[PROVIDER]]
+
+Pt is a 42 y/o F w/ 4 mo of symmetric joint pain and swelling in
+hands and wrists; AM stiffness > 1 hr.
+
+Exam: {synovitis} of bilat 2nd–3rd {MCP}s and {PIP}s; wrists boggy.
+No DIP involvement.
+Labs: {RF} (+), anti-CCP strongly (+), ESR 46, CRP 2.1
+XR hands: periarticular osteopenia, early erosions
+
+A/P: Seropositive {RA}, new dx, w/ early erosive {dz}
+- Start methotrexate 15 mg PO weekly + folic acid 1 mg daily
+- Prednisone bridge 10 mg daily, taper over 8 wks
+- Baseline CBC, LFTs, hepatitis B/C serologies; {DMARD} counseling`,
+  qs: [
+    ["synovitis", "Inflammation of the joint lining", ["Inflammation of a tendon", "Inflammation of bone", "Fusion of a joint"], "Synov (synovium, the joint lining) + -itis. Tendon inflammation = tendinitis."],
+    ["MCP", "Metacarpophalangeal joint (the knuckle)", ["Medial carpal plate", "Main cervical process", "Metatarsal cuneiform point"], "Meta- (beyond) + carp (wrist) + phalanx (finger bone). These are the big knuckles."],
+    ["PIP", "Proximal interphalangeal joint (middle finger joint)", ["Posterior iliac point", "Peak inspiratory pressure", "Pulmonary interstitial pattern"], "Proximal = closer to the body. DIP = the distal (fingertip) joint. In a ventilator note, PIP = peak inspiratory pressure."],
+    ["RF", "Rheumatoid factor", ["Renal failure", "Risk factor", "Rheumatic fever"], "RF is an antibody often found in rheumatoid arthritis. Anti-CCP is more specific."],
+    ["RA", "Rheumatoid arthritis", ["Room air", "Right atrium", "Reactive arthritis"], "These are the same letters as 'room air' in the ED note. The specialty tells you which one is meant."],
+    ["dz", "Disease", ["Dizziness", "Dozen", "Discharge"], "dz = disease. 'Erosive dz' means the arthritis is already wearing away bone."],
+    ["DMARD", "Disease-modifying antirheumatic drug", ["Daily medication for arthritis, rheumatoid dosing", "Dual-mechanism anti-rheumatic dose", "Drug-monitoring alert for rheumatology"], "DMARDs like methotrexate slow joint damage instead of only treating pain."]
+  ]},
+
+{ id: "rad-ct", specialty: "Radiology", setting: "Emergency",
+  type: "Radiology Report", title: "The CT scan", reviewed: false,
+  note: `RADIOLOGY REPORT
+Exam: CT ABDOMEN/PELVIS WITH IV CONTRAST
+Date: [[DATE]]    Accession #: [[ACCOUNT]]    Ordering: [[PROVIDER]]
+
+Clinical indication: {RLQ} pain, fever, leukocytosis
+
+Technique: Axial images w/ coronal and sagittal reformats.
+
+Findings: The appendix is dilated to 12 mm w/ wall thickening and
+periappendiceal fat {stranding}. An {appendicolith} is present.
+No {free air}. No drainable fluid collection.
+Liver, spleen, pancreas unremarkable. No {hydronephrosis}.
+Bladder {WNL}.
+
+Impression:
+1. Acute appendicitis w/ appendicolith. No evidence of perforation
+   or abscess.
+Critical result communicated to [[PROVIDER]] at 21:04.`,
+  qs: [
+    ["RLQ", "Right lower quadrant (of the abdomen)", ["Right lung, lower lobe", "Rapid lab query", "Rectal-lumbar quadrant"], "The abdomen is divided into 4 quadrants: RUQ, LUQ, RLQ, and LLQ. The appendix usually sits in the RLQ."],
+    ["stranding", "Hazy streaks in fat, a sign of nearby inflammation", ["A string-like parasite", "A tear in the bowel wall", "Calcified blood vessels"], "Fat stranding is one of the most common signs of inflammation that radiologists report."],
+    ["appendicolith", "A calcified stone in the appendix", ["An abscess in the appendix", "A tumor of the appendix", "Removal of the appendix"], "-lith = stone. Nephrolith = kidney stone; cholelith = gallstone."],
+    ["free air", "Air outside the bowel in the abdomen (suggests perforation)", ["Normal gas in the intestines", "Air in the lungs", "Air in the bladder"], "Free air is also called pneumoperitoneum. Its absence here means no rupture was seen."],
+    ["hydronephrosis", "Swelling of the kidney from urine backup", ["Kidney dehydration", "Kidney infection", "Fluid in the lungs"], "Hydr/o (water) + nephr/o (kidney) + -osis (condition)."],
+    ["WNL", "Within normal limits", ["Without new lesions", "Weekly normal labs", "Will need a look"], "Some clinicians joke that WNL means 'we never looked,' which is why good notes describe what was actually examined."]
+  ]},
+
+{ id: "anes-preop", specialty: "Anesthesiology", setting: "Outpatient",
+  type: "Pre-Operative Evaluation", title: "Cleared for a new knee", reviewed: false,
+  note: `ANESTHESIA PRE-OPERATIVE EVALUATION
+Date: [[DATE]]    Surgeon: [[PROVIDER]]
+Procedure: R total knee arthroplasty ({TKA})
+
+Pt is a 71 y/o F w/ HTN, OSA on {CPAP}, {GERD}, BMI 36.
+Prior anesthesia: {PONV} after cholecystectomy.
+No family hx of malignant hyperthermia.
+
+Airway: {Mallampati} III, TMD 3 FB, full neck {ROM}
+{ASA} physical status: III
+
+Plan: Spinal anesthesia w/ MAC; adductor canal block for post-op
+analgesia. Multimodal PONV ppx. Bring CPAP day of surgery.
+NPO: no solids after MN; clear liquids until 2 hrs before arrival.`,
+  qs: [
+    ["TKA", "Total knee arthroplasty (knee replacement)", ["Tibial knee amputation", "Torn knee anterior ligament", "Total knee arthroscopy"], "Arthr/o (joint) + -plasty (surgical repair). An arthroscopy (-scopy) only looks inside the joint with a camera."],
+    ["CPAP", "Continuous positive airway pressure", ["Chronic pulmonary arterial pressure", "Cardiopulmonary assessment protocol", "Controlled-pressure airway pump"], "A CPAP machine keeps the airway open during sleep. It's the standard treatment for OSA."],
+    ["GERD", "Gastroesophageal reflux disease", ["Gastric erosion and duodenal reflux", "General esophageal restriction disorder", "Gastroenteritis, recurrent, diarrheal"], "Gastr/o (stomach) + esophag/o (esophagus). Stomach acid backs up into the esophagus."],
+    ["PONV", "Post-operative nausea and vomiting", ["Post-operative neurovascular check", "Pre-op nothing by vein", "Pain on nerve block"], "A prior history of PONV means the anesthesia team plans extra prevention ('ppx')."],
+    ["Mallampati", "A score predicting how difficult intubation may be, based on how much of the throat is visible", ["A heart-risk score for surgery", "A score of neck flexibility", "A sleep apnea questionnaire"], "The score runs from Class I (soft palate and uvula fully visible) to Class IV (only the hard palate visible)."],
+    ["ROM", "Range of motion", ["Rupture of membranes", "Review of medications", "Rule out malignancy"], "In an OB note, ROM = rupture of membranes."],
+    ["ASA", "American Society of Anesthesiologists physical status class", ["Aspirin", "Anterior spinal artery", "Acute surgical abdomen"], "In an anesthesia note, ASA III = a patient with severe systemic disease. In the ED chest-pain note, ASA = aspirin (acetylsalicylic acid)."]
+  ]},
+
+{ id: "pt-tka", specialty: "Physical Therapy / Rehab (PM&R)", setting: "Inpatient",
+  type: "PT Initial Evaluation", title: "First steps after surgery", reviewed: false,
+  note: `PHYSICAL THERAPY INITIAL EVALUATION — ACUTE CARE
+Date: [[DATE]]    Therapist: [[PROVIDER]], PT, DPT
+
+Pt is a 74 y/o M POD #2 s/p L TKA.
+{PLOF}: independent ambulation w/o {AD}; lives w/ spouse in 2-story
+home w/ 12 {STE}, R rail.
+
+Bed mobility: {min A}
+Sit → stand: {CGA} w/ RW
+Gait: 60 ft w/ RW, CGA, antalgic pattern
+L knee {AROM}: 5–75°
+
+Assessment: Pt below PLOF, limited by pain and decreased knee ROM.
+Good rehab potential.
+
+Plan: PT BID. D/c recs: home w/ {HHPT} vs outpatient PT once
+stair training completed safely.`,
+  qs: [
+    ["PLOF", "Prior level of function", ["Planned length of follow-up", "Post-lower-operative function", "Physical level of fitness"], "PLOF = how the patient functioned before this hospitalization. It sets the rehab goal."],
+    ["AD", "Assistive device (cane, walker)", ["Alzheimer's disease", "Advance directive", "Atopic dermatitis"], "In rehab notes, AD = assistive device. Elsewhere AD may mean Alzheimer's disease or advance directive."],
+    ["STE", "Steps to enter (the home)", ["ST elevation", "Short-term evaluation", "Stair training exercise"], "In PT notes, STE = steps to enter. In a cardiology or ED note, STE = ST elevation on an ECG."],
+    ["min A", "Minimal assistance (patient does about 75% of the effort)", ["Minimum age", "Minute of activity", "Minor allergy"], "The assist scale runs roughly: independent → supervision/SBA → CGA → min A → mod A → max A → dependent."],
+    ["CGA", "Contact guard assist (hand on the patient for safety, no lifting)", ["Complete gait assessment", "Cane gait assistance", "Controlled gait angle"], "With CGA, the therapist keeps a hand on the patient in case of a loss of balance."],
+    ["AROM", "Active range of motion (the patient moves the joint)", ["Assisted range of motion", "Average rate of movement", "Anterior rotation of the meniscus"], "PROM = passive range of motion (the therapist moves the joint). In labor and delivery, AROM = artificial rupture of membranes."],
+    ["HHPT", "Home health physical therapy", ["Hip and hamstring PT", "High-intensity hospital PT", "Home hospice physical therapy"], "With HHPT, a therapist visits the patient's home until they can travel to outpatient therapy."]
+  ]},
+
+{ id: "rn-shift", specialty: "Nursing", setting: "Inpatient",
+  type: "Shift Note", title: "A 12-hour shift", reviewed: false,
+  note: `NURSING SHIFT NOTE — MED/SURG, 0700–1900
+Date: [[DATE]]    RN: [[PROVIDER]]
+
+Pt is an 80 y/o F POD #3 s/p R hemicolectomy. {A&Ox4}, calm.
+VS stable. Pain 3/10; oxycodone 5 mg PO PRN x1 w/ relief.
+
+IV: L forearm 20g, patent, no signs of {phlebitis}
+{Foley} removed 0600 per order; {DTV} by 1400 — voided 350 mL at 1210
+Skin: {Braden} 16; turned q2h, heels floated
+{SCDs} on while in bed
+Safety: fall-risk precautions, bed alarm on, call bell in reach
+Tolerating regular diet. Ambulated in hall x3 w/ {SBA}.
+I&O: In 1,450 mL / Out 1,100 mL`,
+  qs: [
+    ["A&Ox4", "Alert and oriented to person, place, time, and situation", ["Awake and on oxygen, 4 liters", "Assessed and observed every 4 hours", "Ambulating with a 4-point cane"], "Orientation is documented x1 to x4. Lower numbers can signal confusion or delirium."],
+    ["phlebitis", "Inflammation of a vein", ["A blood clot in an artery", "IV fluid leaking into tissue", "A skin infection"], "Phleb/o (vein) + -itis. IV fluid leaking into tissue is called infiltration."],
+    ["Foley", "An indwelling urinary catheter", ["A type of IV line", "A wound drain", "A feeding tube"], "Named after Dr. Frederic Foley, it stays in the bladder, held in place by a small balloon."],
+    ["DTV", "Due to void (must urinate by this time)", ["Deep thrombosis of a vein", "Daily total volume", "Discharge to visit"], "After a catheter comes out, nurses make sure the patient urinates within about 6–8 hours."],
+    ["Braden", "A pressure-injury (bedsore) risk scale", ["A fall-risk scale", "A pain scale", "A sedation scale"], "Lower Braden scores mean higher risk. Fall risk is often scored with the Morse scale."],
+    ["SCDs", "Sequential compression devices (leg sleeves that prevent clots)", ["Scheduled care documents", "Standard cardiac drips", "Subcutaneous drug doses"], "SCDs inflate and deflate around the legs to keep blood moving."],
+    ["SBA", "Stand-by assist (staff nearby, no touching needed)", ["Small bowel activity", "Short-burst ambulation", "Supervised bed activity"], "SBA is one step more independent than contact guard assist (CGA)."]
+  ]}
+
+]
+};
+
+</script>
+<!-- ============ END CONTENT ============ -->
+<script>
+(function(){
+"use strict";
+const DATA = window.CHART_DECODER;
+const app = document.getElementById("app");
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const unesc = s => s.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&amp;/g,"&");
+const shuffle = a => { a = a.slice(); for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; } return a; };
+const uniq = a => [...new Set(a)];
+
+/* ---------- saved progress (per browser) ---------- */
+const KEY = "chartDecoder.v1";
+function load(){ try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){ return {}; } }
+let S = Object.assign({ best:{}, boot:{}, style:"blank" }, load());
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+
+/* ---------- PHI labels ---------- */
+const PHI = {
+  "NAME":     { label:"Name", why:"Names of the patient and their relatives are HIPAA identifiers." },
+  "DATE":     { label:"Date", why:"All date elements except the year (admission, visit, birth, and due dates) are removed or shifted." },
+  "MRN":      { label:"Medical Record Number", why:"Medical record numbers are one of the 18 HIPAA identifiers." },
+  "PROVIDER": { label:"Provider Name", why:"Clinician names aren't on the HIPAA Safe Harbor list, but many datasets (like MIMIC) remove them too." },
+  "HOSPITAL": { label:"Hospital", why:"Facility names can reveal location, so datasets usually remove them." },
+  "LOCATION": { label:"Address", why:"Street addresses, cities, and most ZIP code digits are HIPAA identifiers." },
+  "PHONE":    { label:"Telephone", why:"Telephone numbers are HIPAA identifiers." },
+  "ACCOUNT":  { label:"Account Number", why:"Account and accession numbers are HIPAA identifiers." },
+  "AGE 90+":  { label:"Age over 89", why:"Ages over 89 are identifiers under Safe Harbor. They're removed or grouped as '90+'." }
+};
+const STYLES = [["blank","Blanks  ___"],["mimic3","Tags  [**Name**]"],["bar","Black bars"]];
+
+function renderNote(text, opts){
+  opts = opts || {};
+  const style = opts.style || S.style, expand = opts.expand || null;
+  let h = esc(text);
+  h = h.replace(/\[\[([^\]]+)\]\]/g, (m, t) => {
+    const info = PHI[t] || { label:t, why:"" };
+    const shown = style === "mimic3" ? "[**" + info.label + "**]" : style === "bar" ? info.label : "___";
+    return '<button type="button" class="phi phi-' + style + '" data-act="phi" data-phi="' + t + '" title="Removed for de-identification: ' + esc(info.label) + '" aria-label="Redacted: ' + esc(info.label) + '">' + esc(shown) + '</button>';
+  });
+  h = h.replace(/\{([^}]+)\}/g, (m, t) => {
+    const raw = unesc(t);
+    const ex = expand && expand[raw] ? ' <span class="expand">[' + esc(expand[raw]) + ']</span>' : "";
+    return '<span class="term" data-term="' + t + '">' + t + '</span>' + ex;
+  });
+  return h;
+}
+function starHTML(n){ return '<span class="stars" aria-label="' + n + ' of 3 stars">' + "★".repeat(n) + '<span class="off">' + "★".repeat(3-n) + '</span></span>'; }
+function totalStars(){ return Object.entries(S.best).filter(([id]) => DATA.cases.some(c => c.id === id)).reduce((a,[,b]) => a + (b.stars||0), 0); }
+function updateTop(){ $("#starCount").textContent = totalStars(); }
+let toastT;
+function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3800); }
+function nav(h){ if (location.hash === h || (h === "#" && !location.hash)) route(); else location.hash = h; }
+
+/* ---------- router ---------- */
+let Q = null;
+const H = { setting:"All", q:"" };
+function route(){
+  const h = decodeURIComponent(location.hash.slice(1));
+  Q = null;
+  window.scrollTo(0, 0);
+  if (h === "review") viewReview();
+  else if (h.startsWith("boot")) viewBoot(h.split("/")[1]);
+  else if (h.startsWith("case/")) viewCase(h.slice(5));
+  else viewHome();
+  updateTop();
+}
+window.addEventListener("hashchange", route);
+
+/* ---------- HOME ---------- */
+function viewHome(){
+  const done = DATA.cases.filter(c => S.best[c.id]).length;
+  const bootDone = DATA.bootcamp.filter(g => (S.boot[g.key]||0) >= 70).length;
+  document.title = "Chart Decoder";
+  app.innerHTML = `
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Health informatics · Medical terminology</p>
+      <h1>Can you read the chart?</h1>
+      <p class="lede">Clinical notes are full of shorthand, Latin, and blanks where identifiers were removed. Decode realistic, de-identified notes from across medicine, one term at a time.</p>
+      <div class="hero-actions btnrow">
+        <a class="btn primary" href="#boot/prefix">Start with Bootcamp</a>
+        <button class="btn ghost" data-act="how">How to play</button>
+      </div>
+    </div>
+    <div class="statcard" aria-label="Your progress">
+      <div><b>${done}/${DATA.cases.length}</b><span>notes decoded</span></div>
+      <div><b>${totalStars()}</b><span>stars earned</span></div>
+      <div><b>${bootDone}/${DATA.bootcamp.length}</b><span>bootcamp sets</span></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="step">1</span><h2>Terminology Bootcamp</h2></div>
+    <p class="sub">Learn the building blocks first: <b>hepat</b>/o (liver) + <b>-megaly</b> (enlargement) = hepatomegaly. Score 70%+ on a set to complete it.</p>
+    <div class="boot-grid">
+      ${DATA.bootcamp.map(g => `
+        <a class="boot-card" href="#boot/${g.key}">
+          <h3>${esc(g.name)}</h3>
+          <p>${g.items.length} terms${S.boot[g.key] != null ? " · best " + S.boot[g.key] + "%" : ""}</p>
+          <div class="meter"><i style="width:${S.boot[g.key]||0}%"></i></div>
+        </a>`).join("")}
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="step">2</span><h2>Decode the chart</h2></div>
+    <p class="sub">${DATA.cases.length} notes across ${uniq(DATA.cases.map(c=>c.specialty)).length} specialties and disciplines, each written the way it would look in a de-identified dataset.</p>
+    <div class="filters" role="group" aria-label="Filter by setting">
+      ${["All","Inpatient","Outpatient","Emergency"].map(s => `<button class="chip" data-act="filter" data-v="${s}" aria-pressed="${H.setting===s}">${s}</button>`).join("")}
+      <input class="search" id="search" type="search" placeholder="Search specialty or note type…" value="${esc(H.q)}" aria-label="Search cases">
+    </div>
+    <div class="cards" id="cards"></div>
+  </section>`;
+  renderCards();
+  $("#search").addEventListener("input", e => { H.q = e.target.value; renderCards(); });
+}
+function renderCards(){
+  const q = H.q.trim().toLowerCase();
+  const list = DATA.cases.filter(c => (H.setting === "All" || c.setting === H.setting) &&
+    (!q || (c.specialty + " " + c.type + " " + c.title).toLowerCase().includes(q)));
+  $("#cards").innerHTML = list.length ? list.map(c => {
+    const b = S.best[c.id];
+    return `<a class="card" href="#case/${c.id}" style="text-decoration:none;color:inherit">
+      <div class="card-top"><span class="tag ${c.setting}">${c.setting}</span>${b ? starHTML(b.stars) : ""}</div>
+      <h3>${esc(c.specialty)}</h3>
+      <p>${esc(c.title)}</p>
+      <small>${esc(c.type)} · ${c.qs.length} questions${c.reviewed ? "" : ' · <span class="draft">Draft, pending clinician review</span>'}</small>
+    </a>`;
+  }).join("") : '<p class="empty">No notes match that filter.</p>';
+  document.querySelectorAll('[data-act="filter"]').forEach(b => b.setAttribute("aria-pressed", b.dataset.v === H.setting));
+}
+
+/* ---------- BOOTCAMP ---------- */
+const GROUP = Object.fromEntries(DATA.bootcamp.map(g => [g.key, g]));
+function viewBoot(key){
+  const g = GROUP[key] || DATA.bootcamp[0];
+  document.title = "Bootcamp · Chart Decoder";
+  app.innerHTML = `
+  <div class="crumbs"><a href="#">← Home</a></div>
+  <header>
+    <p class="eyebrow">Step 1</p>
+    <h1 style="font-size:clamp(26px,4vw,36px)">Terminology Bootcamp</h1>
+    <p class="lede">Most medical words are built from Greek and Latin parts. Learn the parts and you can decode words you've never seen before.</p>
+  </header>
+  <nav class="tabs" aria-label="Bootcamp sets">
+    ${DATA.bootcamp.map(x => `<a href="#boot/${x.key}" class="tab ${x.key===g.key?"on":""}" ${x.key===g.key?'aria-current="page"':""}>${esc(x.name)}${S.boot[x.key]!=null ? ' <span class="mini">' + S.boot[x.key] + "%</span>" : ""}</a>`).join("")}
+  </nav>
+  <section class="boot-intro">
+    <p>${esc(g.blurb)}</p>
+    <div class="btnrow">
+      <button class="btn primary" data-act="bootquiz" data-key="${g.key}">Quiz: ${esc(g.name)} (10)</button>
+      <button class="btn ghost" data-act="bootmix">Mixed quiz, all sets (15)</button>
+    </div>
+  </section>
+  <p class="hint-line">Study first: tap a card to flip it.</p>
+  <div class="flash-grid">
+    ${g.items.map(it => {
+      const [part, meaning, ex, extra] = it;
+      const sub = g.kind === "part" ? `e.g., <i>${esc(ex)}</i>: ${esc(extra)}` : (ex ? `Latin: <i>${esc(ex)}</i>` : "") + (extra ? (ex ? "<br>" : "") + esc(extra) : "");
+      return `<button class="flash" data-act="flip" aria-pressed="false"><span class="front"><b>${esc(part)}</b></span><span class="back"><b>${esc(meaning)}</b>${sub ? "<small>" + sub + "</small>" : ""}</span></button>`;
+    }).join("")}
+  </div>`;
+}
+function bootQuestions(groups, n){
+  const pool = [];
+  groups.forEach(g => g.items.forEach(it => pool.push({ g, it })));
+  const allEx = uniq(DATA.bootcamp.filter(g => g.kind === "part").flatMap(g => g.items.map(i => i[3])));
+  return shuffle(pool).slice(0, n).map(({ g, it }) => {
+    const [part, meaning, ex, extra] = it;
+    if (g.kind === "part" && Math.random() < 0.4) {
+      const wrong = shuffle(allEx.filter(e => e !== extra)).slice(0, 3);
+      return { term:null, answer:extra, options:shuffle([extra, ...wrong]),
+        explain:`"${ex}" contains ${part} (${meaning}). It means ${extra}.`,
+        prompt:`Use the word parts: what does <mark>${esc(ex)}</mark> mean?` };
+    }
+    const wrong = shuffle(uniq(g.items.map(x => x[1]).filter(m => m !== meaning))).slice(0, 3);
+    const explain = g.kind === "part" ? `${part} = ${meaning}. Example: ${ex} = ${extra}.`
+      : `${part} = ${meaning}.` + (ex ? ` From the Latin "${ex}".` : "") + (extra ? " " + extra : "");
+    return { term:null, answer:meaning, options:shuffle([meaning, ...wrong]), explain,
+      prompt: g.kind === "part" ? `What does the word part <mark>${esc(part)}</mark> mean?` : `In a chart or med order, what does <mark>${esc(part)}</mark> mean?` };
+  });
+}
+function startBootQuiz(keys, n){
+  const label = keys.length === 1 ? GROUP[keys[0]].name : "Mixed review";
+  Q = { kind:"boot", keys, items:bootQuestions(keys.map(k => GROUP[k]), n), i:0, score:0, correct:0, streak:0, results:[] };
+  app.innerHTML = `
+  <div class="crumbs"><button class="link" data-act="nav" data-h="#boot/${keys.length === 1 ? keys[0] : "prefix"}">← Back to Bootcamp</button></div>
+  <div class="solo">
+    <div><p class="eyebrow">Bootcamp quiz</p><h1>${esc(label)}</h1></div>
+    <div id="qbox" class="qcard"></div>
+    <div class="decoded"><h3>Learned so far</h3><ul id="decodedList"></ul></div>
+  </div>`;
+  renderQ();
+}
+
+/* ---------- CASE ---------- */
+function viewCase(id){
+  const c = DATA.cases.find(x => x.id === id);
+  if (!c) return viewHome();
+  document.title = c.specialty + " · Chart Decoder";
+  Q = { kind:"case", c, i:0, score:0, correct:0, streak:0, results:[],
+        items: c.qs.map(([term, answer, wrong, explain, prompt, phi]) => ({
+          term, answer, explain, phi: phi || null, options: shuffle([answer, ...wrong]),
+          prompt: prompt ? esc(prompt) : `In this note, what does <mark>${esc(term)}</mark> mean?` })) };
+  app.innerHTML = `
+  <div class="crumbs"><a href="#">← All notes</a></div>
+  <div class="case-head">
+    <div><p class="eyebrow">${esc(c.specialty)} · ${esc(c.setting)}</p><h1>${esc(c.title)}</h1></div>
+    ${c.reviewed ? "" : '<span class="draft" style="font-size:13px">Draft case, pending clinician review</span>'}
+  </div>
+  <div class="case-grid">
+    <section class="ehr" aria-label="Clinical note">
+      <div class="ehr-bar">
+        <span class="dot" aria-hidden="true"></span><b>${esc(c.type)}</b><span>De-identified extract</span>
+        <label>Redaction style
+          <select id="styleSel">${STYLES.map(([v,l]) => `<option value="${v}" ${S.style===v?"selected":""}>${l}</option>`).join("")}</select>
+        </label>
+      </div>
+      <div class="note-box" id="noteBox"><pre class="note" id="note">${renderNote(c.note)}</pre></div>
+    </section>
+    <aside class="panel">
+      <div id="qbox" class="qcard"></div>
+      <div class="decoded"><h3>Decoded so far</h3><ul id="decodedList"></ul></div>
+    </aside>
+  </div>`;
+  $("#styleSel").addEventListener("change", e => {
+    S.style = e.target.value; save();
+    $("#note").innerHTML = renderNote(c.note);
+    paintTerms();
+  });
+  renderQ();
+}
+function paintTerms(scroll){
+  const note = $("#note");
+  if (!note || !Q || Q.kind !== "case") return;
+  const cur = Q.items[Q.i];
+  let target = null;
+  note.querySelectorAll(".term").forEach(sp => {
+    const t = sp.dataset.term;
+    const r = Q.results.find(x => x.term === t);
+    sp.classList.toggle("ok", !!r && r.ok);
+    sp.classList.toggle("miss", !!r && !r.ok);
+    const act = !Q.answered && cur && cur.term === t;
+    sp.classList.toggle("active", act);
+    if (act && !target) target = sp;
+    if (r) sp.title = r.answer;
+  });
+  note.querySelectorAll(".phi").forEach(b => {
+    const act = !Q.answered && cur && cur.phi === b.dataset.phi;
+    b.classList.toggle("active", act);
+    if (act && !target) target = b;
+  });
+  if (scroll && target) {
+    const box = $("#noteBox");
+    const top = target.offsetTop - box.clientHeight / 2 + 12;
+    box.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }
+}
+
+/* ---------- shared question engine ---------- */
+function renderQ(){
+  const q = Q.items[Q.i], n = Q.items.length;
+  Q.answered = false; Q.hint = false;
+  $("#qbox").innerHTML = `
+    <div class="qmeta"><span>${Q.kind === "case" ? (q.term ? "Term" : "De-ID question") : "Question"} ${Q.i+1} of ${n}</span><span>${Q.score} pts${Q.streak >= 2 ? " · streak " + Q.streak : ""}</span></div>
+    <div class="progress" aria-hidden="true"><i style="width:${Q.i/n*100}%"></i></div>
+    <p class="prompt">${q.prompt}</p>
+    <div class="opts">${q.options.map((o,k) => `<button class="opt" data-act="answer" data-k="${k}"><kbd>${k+1}</kbd><span>${esc(o)}</span></button>`).join("")}</div>
+    <div class="qfoot"><button class="btn ghost small" data-act="hint" id="hintBtn">Hint: remove 2 wrong answers</button><span class="keys">Keys 1–4 · H for hint</span></div>
+    <div class="fb" id="fb" aria-live="polite"></div>`;
+  paintTerms(true);
+}
+function useHint(){
+  if (!Q || Q.answered || Q.hint) return;
+  Q.hint = true;
+  const q = Q.items[Q.i];
+  const btns = [...document.querySelectorAll(".opt")];
+  shuffle(btns.filter(b => q.options[+b.dataset.k] !== q.answer)).slice(0, 2).forEach(b => { b.classList.add("out"); b.disabled = true; });
+  const hb = $("#hintBtn"); hb.disabled = true; hb.textContent = "Hint used (max 5 pts)";
+}
+function answer(k){
+  if (!Q || Q.answered) return;
+  const q = Q.items[Q.i];
+  const btn = document.querySelector(`.opt[data-k="${k}"]`);
+  if (!btn || btn.disabled) return;
+  Q.answered = true;
+  const ok = q.options[k] === q.answer;
+  document.querySelectorAll(".opt").forEach(b => {
+    b.disabled = true;
+    if (q.options[+b.dataset.k] === q.answer) b.classList.add("right");
+  });
+  if (!ok) btn.classList.add("wrong");
+  $("#hintBtn").disabled = true;
+  let pts = 0;
+  if (ok) { Q.correct++; Q.streak++; pts = Q.hint ? 5 : 10; if (Q.streak >= 3) pts += 2; }
+  else Q.streak = 0;
+  Q.score += pts;
+  Q.results.push({ term:q.term, answer:q.answer, explain:q.explain, ok, prompt:q.prompt });
+  const last = Q.i === Q.items.length - 1;
+  $("#fb").innerHTML = `
+    <div class="verdict ${ok ? "good" : "bad"}">${ok ? "Correct! +" + pts + (Q.streak >= 3 ? " (streak bonus)" : "") : "Not quite."}</div>
+    <p><strong>${q.term ? esc(q.term) + " = " : ""}${esc(q.answer)}</strong></p>
+    <p class="explain">${esc(q.explain)}</p>
+    <button class="btn primary" data-act="next" id="nextBtn">${last ? "See results" : "Next"} →</button>`;
+  const li = document.createElement("li");
+  li.className = ok ? "ok" : "miss";
+  li.innerHTML = `<b>${q.term ? esc(q.term) : (Q.kind === "case" ? "De-ID" : "✓")}</b> ${esc(q.answer)}`;
+  $("#decodedList").appendChild(li);
+  paintTerms(false);
+  $("#nextBtn").focus({ preventScroll:true });
+}
+function next(){
+  if (!Q || !Q.answered) return;
+  if (Q.i < Q.items.length - 1) { Q.i++; renderQ(); } else finish();
+}
+function finish(){
+  const n = Q.items.length, acc = Math.round(Q.correct / n * 100);
+  const stars = acc >= 90 ? 3 : acc >= 70 ? 2 : acc >= 50 ? 1 : 0;
+  const heads = ["Keep practicing", "Getting there", "Solid decoding", "Chart fluent!"];
+  let body = "", actions = "";
+  if (Q.kind === "case") {
+    const c = Q.c, prev = S.best[c.id];
+    if (!prev || stars > prev.stars || (stars === prev.stars && Q.score > prev.score)) S.best[c.id] = { stars, score:Q.score, acc };
+    const idx = DATA.cases.findIndex(x => x.id === c.id), nx = DATA.cases[(idx + 1) % DATA.cases.length];
+    const expand = {}; Q.results.forEach(r => { if (r.term) expand[r.term] = r.answer; });
+    actions = `<button class="btn ghost" data-act="nav" data-h="#case/${c.id}">Replay</button>
+      <a class="btn primary" href="#case/${nx.id}">Next note: ${esc(nx.specialty)} →</a>
+      <a class="btn ghost" href="#">All notes</a>`;
+    body = `<h2>The note, in plain language</h2>
+      <div class="ehr"><div class="note-box" style="max-height:none"><pre class="note">${renderNote(c.note, { expand })}</pre></div></div>`;
+  } else {
+    const k = Q.keys.length === 1 ? Q.keys[0] : "mixed";
+    S.boot[k] = Math.max(S.boot[k] || 0, acc);
+    const keysStr = Q.keys.join(",");
+    actions = `<button class="btn ghost" data-act="bootagain" data-keys="${keysStr}" data-n="${n}">Try again</button>
+      ${Q.keys.length === 1 ? `<a class="btn ghost" href="#boot/${Q.keys[0]}">Back to cards</a>` : ""}
+      <a class="btn primary" href="#">Go decode notes →</a>`;
+  }
+  save(); updateTop();
+  const rows = Q.results.map(r => `<tr class="${r.ok ? "ok" : "miss"}"><td class="t">${r.term ? esc(r.term) : (Q.kind === "case" ? "De-ID" : "·")}</td><td><b>${esc(r.answer)}</b><br><span class="x">${esc(r.explain)}</span></td><td>${r.ok ? "✓" : "✗"}</td></tr>`).join("");
+  app.innerHTML = `
+  <div class="summary">
+    <div class="result">
+      <div class="big-stars" aria-label="${stars} of 3 stars">${"★".repeat(stars)}<span class="off">${"★".repeat(3 - stars)}</span></div>
+      <h1>${heads[stars]}</h1>
+      <p>${Q.correct} of ${n} correct (${acc}%) · ${Q.score} points</p>
+      <div class="btnrow">${actions}</div>
+    </div>
+    ${body}
+    <h2>Study sheet</h2>
+    <div class="table-wrap"><table><thead><tr><th>Term</th><th>Meaning & why</th><th>You</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+  Q = null;
+  window.scrollTo(0, 0);
+}
+
+/* ---------- CLINICIAN REVIEW ---------- */
+function viewReview(){
+  document.title = "Clinician Review · Chart Decoder";
+  const caseHTML = DATA.cases.map((c, i) => `
+    <article class="rv-case" id="rv-${c.id}">
+      <h2>${i+1}. ${esc(c.specialty)}: ${esc(c.title)}</h2>
+      <p class="rv-meta">${esc(c.setting)} · ${esc(c.type)} · id: <code>${c.id}</code> · ${c.reviewed ? "✓ Reviewed" + (c.reviewedBy ? " by " + esc(c.reviewedBy) : "") : "Pending review"}</p>
+      <div class="note-box"><pre class="note">${renderNote(c.note, { style:"mimic3" })}</pre></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Term / question</th><th>Correct answer</th><th>Distractors</th><th>Explanation shown to students</th></tr></thead>
+        <tbody>${c.qs.map(([t, a, w, x, p], k) => `<tr><td>${k+1}</td><td class="t">${t ? esc(t) : '<span style="font-family:var(--sans);font-weight:400">' + esc(p) + "</span>"}</td><td><b>${esc(a)}</b></td><td>${w.map(esc).join("<br>")}</td><td>${esc(x)}</td></tr>`).join("")}</tbody>
+      </table></div>
+      <div class="rv-lines">Reviewer comments:</div>
+    </article>`).join("");
+  const bootHTML = DATA.bootcamp.map(g => `
+    <h3 style="margin:22px 0 8px">${esc(g.name)}</h3>
+    <div class="table-wrap"><table><thead><tr><th>Term</th><th>Meaning</th><th>${g.kind === "part" ? "Example" : "Latin / note"}</th></tr></thead>
+    <tbody>${g.items.map(([p, m, e, x]) => `<tr><td class="t">${esc(p)}</td><td>${esc(m)}</td><td>${g.kind === "part" ? "<i>" + esc(e) + "</i>: " + esc(x) : esc([e, x].filter(Boolean).join(" · "))}</td></tr>`).join("")}</tbody></table></div>`).join("");
+  app.innerHTML = `
+  <div class="review">
+    <div class="crumbs no-print"><a href="#">← Back to game</a></div>
+    <p class="eyebrow">Answer key</p>
+    <h1>Clinician Review Packet</h1>
+    <div class="rv-help">
+      <b>Thank you for reviewing!</b> For each case, please check:
+      <ol>
+        <li>Is the note clinically plausible (history, exam, labs, and plan fit together)?</li>
+        <li>Are abbreviations used the way clinicians actually write them?</li>
+        <li>Is the correct answer right, and is <i>no</i> distractor also correct in this context?</li>
+        <li>Is the explanation accurate and helpful for a non-clinician student?</li>
+      </ol>
+      <div class="btnrow no-print" style="margin-top:12px"><button class="btn primary" data-act="print">Print / save as PDF</button></div>
+    </div>
+    <h2 style="font-size:20px">Cases</h2>
+    <ol class="rv-toc">${DATA.cases.map(c => `<li><a href="#review" data-act="jump" data-id="rv-${c.id}">${esc(c.specialty)}: ${esc(c.title)}</a> <span class="draft">(${c.setting})</span></li>`).join("")}</ol>
+    ${caseHTML}
+    <article class="rv-case"><h2>Bootcamp reference</h2>${bootHTML}</article>
+  </div>`;
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const a = el.dataset.act;
+  if (a === "how") { $("#howDlg").showModal(); }
+  else if (a === "closehow") { $("#howDlg").close(); }
+  else if (a === "filter") { H.setting = el.dataset.v; renderCards(); }
+  else if (a === "flip") { el.classList.toggle("flipped"); el.setAttribute("aria-pressed", el.classList.contains("flipped")); }
+  else if (a === "bootquiz") { startBootQuiz([el.dataset.key], 10); }
+  else if (a === "bootmix") { startBootQuiz(DATA.bootcamp.map(g => g.key), 15); }
+  else if (a === "bootagain") { startBootQuiz(el.dataset.keys.split(","), +el.dataset.n); }
+  else if (a === "answer") { answer(+el.dataset.k); }
+  else if (a === "hint") { useHint(); }
+  else if (a === "next") { next(); }
+  else if (a === "nav") { nav(el.dataset.h); }
+  else if (a === "phi") { const p = PHI[el.dataset.phi]; if (p) toast("Redacted: " + p.label + ". " + p.why); }
+  else if (a === "print") { window.print(); }
+  else if (a === "jump") { e.preventDefault(); const t = document.getElementById(el.dataset.id); if (t) t.scrollIntoView({ behavior:"smooth" }); }
+  else if (a === "reset") {
+    if (confirm("Reset all saved stars and scores in this browser?")) { S = { best:{}, boot:{}, style:S.style }; save(); route(); toast("Progress reset."); }
+  }
+});
+document.addEventListener("keydown", e => {
+  if (!Q || e.target.matches("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if ($("#howDlg").open) return;
+  if (/^[1-4]$/.test(e.key)) { answer(+e.key - 1); }
+  else if (e.key === "h" || e.key === "H") { useHint(); }
+  else if (e.key === "Enter" && Q.answered && document.activeElement && !document.activeElement.matches(".opt")) { e.preventDefault(); next(); }
+});
+
+route();
+})();
+</script>
+</body>
+</html>
